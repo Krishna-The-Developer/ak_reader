@@ -1,38 +1,48 @@
-import 'dart:math' as math;
-import 'package:flutter/material.dart';
+import "dart:math" as math;
+import "package:flutter/material.dart";
+
+enum CurlCorner {
+  topRight,
+  bottomRight,
+  center,
+}
 
 class RealisticPageCurl extends StatefulWidget {
   final int pageCount;
   final int initialPage;
-  final Widget Function(BuildContext context, int pageIndex) builder;
-  final ValueChanged<int> onPageChanged;
+  final ValueChanged<int>? onPageChanged;
+  final VoidCallback? onSwipeBeforeFirst;
+  final IndexedWidgetBuilder builder;
   final Color paperColor;
-  final bool enablePaperTransparency;
+  final bool gesturesEnabled;
+  final Widget Function(double curlProgress, bool isCurling)? bookmarkBuilder;
 
   const RealisticPageCurl({
     super.key,
     required this.pageCount,
     required this.initialPage,
+    this.onPageChanged,
+    this.onSwipeBeforeFirst,
     required this.builder,
-    required this.onPageChanged,
     this.paperColor = const Color(0xFFF5EACB),
-    this.enablePaperTransparency = true,
+    this.gesturesEnabled = true,
+    this.bookmarkBuilder,
   });
 
   @override
   State<RealisticPageCurl> createState() => _RealisticPageCurlState();
 }
 
-// Backward-compatibility alias
-typedef PageCurlView = RealisticPageCurl;
-
 class _RealisticPageCurlState extends State<RealisticPageCurl>
     with SingleTickerProviderStateMixin {
-  late AnimationController _animController;
   late int _currentPage;
-  double _dragProgress = 0.0;
+  late AnimationController _animController;
+  late Animation<double> _animation;
+
+  double _curlProgress = 0.0;
   bool _isForward = true;
   bool _isDragging = false;
+  CurlCorner _activeCorner = CurlCorner.bottomRight;
 
   @override
   void initState() {
@@ -40,42 +50,35 @@ class _RealisticPageCurlState extends State<RealisticPageCurl>
     _currentPage = widget.initialPage;
     _animController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 320),
-    )
-      ..addListener(() {
-        setState(() {
-          _dragProgress = _animController.value;
-        });
-      })
-      ..addStatusListener((status) {
-        if (status == AnimationStatus.completed) {
-          final nextIndex = _isForward ? _currentPage + 1 : _currentPage - 1;
-          _isDragging = false;
-          _dragProgress = 0.0;
-          _animController.reset();
-          if (nextIndex >= 0 && nextIndex < widget.pageCount) {
-            setState(() {
-              _currentPage = nextIndex;
-            });
-            widget.onPageChanged(nextIndex);
-          }
-        } else if (status == AnimationStatus.dismissed) {
-          _isDragging = false;
-          _dragProgress = 0.0;
-        }
-      });
-  }
+      duration: const Duration(milliseconds: 380),
+    );
 
-  @override
-  void didUpdateWidget(RealisticPageCurl oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.initialPage != _currentPage &&
-        !_isDragging &&
-        !_animController.isAnimating) {
+    _animation = Tween<double>(begin: 0.0, end: 0.0).animate(_animController);
+
+    _animController.addListener(() {
       setState(() {
-        _currentPage = widget.initialPage;
+        _curlProgress = _animation.value;
       });
-    }
+    });
+
+    _animController.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        if (_curlProgress >= 0.99) {
+          final newPage = _isForward ? _currentPage + 1 : _currentPage - 1;
+          setState(() {
+            _currentPage = newPage.clamp(0, widget.pageCount - 1);
+            _curlProgress = 0.0;
+            _isDragging = false;
+          });
+          widget.onPageChanged?.call(_currentPage);
+        } else {
+          setState(() {
+            _curlProgress = 0.0;
+            _isDragging = false;
+          });
+        }
+      }
+    });
   }
 
   @override
@@ -84,208 +87,220 @@ class _RealisticPageCurlState extends State<RealisticPageCurl>
     super.dispose();
   }
 
-  void _onHorizontalDragStart(DragStartDetails details) {
-    if (_animController.isAnimating) return;
-    final width = MediaQuery.of(context).size.width;
-    final touchX = details.localPosition.dx;
+  void _onHorizontalDragStart(DragStartDetails details, double height) {
+    if (!widget.gesturesEnabled || _animController.isAnimating) {
+      return;
+    }
+    _isDragging = true;
 
-    if (touchX > width * 0.5) {
-      if (_currentPage < widget.pageCount - 1) {
-        _isForward = true;
-        _isDragging = true;
-        _dragProgress = 0.0;
-      }
+    final dy = details.localPosition.dy;
+    if (dy > height * 0.62) {
+      _activeCorner = CurlCorner.bottomRight;
+    } else if (dy < height * 0.38) {
+      _activeCorner = CurlCorner.topRight;
     } else {
-      if (_currentPage > 0) {
-        _isForward = false;
-        _isDragging = true;
-        _dragProgress = 0.0;
-      }
+      _activeCorner = CurlCorner.center;
     }
   }
 
-  void _onHorizontalDragUpdate(DragUpdateDetails details) {
-    if (!_isDragging) return;
-    final width = MediaQuery.of(context).size.width;
+  void _onHorizontalDragUpdate(DragUpdateDetails details, double width) {
+    if (!_isDragging || _animController.isAnimating || width <= 0) {
+      return;
+    }
+
+    if (_curlProgress == 0.0) {
+      final delta = details.primaryDelta ?? 0.0;
+      if (delta < 0) {
+        if (_currentPage < widget.pageCount - 1) {
+          _isForward = true;
+        } else {
+          return;
+        }
+      } else if (delta > 0) {
+        if (_currentPage > 0) {
+          _isForward = false;
+        } else {
+          widget.onSwipeBeforeFirst?.call();
+          _isDragging = false;
+          return;
+        }
+      } else {
+        return;
+      }
+    }
+
     final delta = details.primaryDelta ?? 0.0;
+    final double change = _isForward ? -delta / width : delta / width;
 
     setState(() {
-      if (_isForward) {
-        _dragProgress = (_dragProgress - (delta / width)).clamp(0.0, 1.0);
-      } else {
-        _dragProgress = (_dragProgress + (delta / width)).clamp(0.0, 1.0);
-      }
+      _curlProgress = (_curlProgress + change).clamp(0.0, 1.0);
     });
   }
 
   void _onHorizontalDragEnd(DragEndDetails details) {
-    if (!_isDragging) return;
+    if (!_isDragging || _animController.isAnimating) {
+      return;
+    }
+    _isDragging = false;
+
     final velocity = details.primaryVelocity ?? 0.0;
+    bool shouldComplete = false;
 
     if (_isForward) {
-      if (_dragProgress > 0.3 || velocity < -400) {
-        _animController.forward(from: _dragProgress);
-      } else {
-        _animController.reverse(from: _dragProgress);
+      if (velocity < -260 || _curlProgress > 0.35) {
+        shouldComplete = true;
       }
     } else {
-      if (_dragProgress > 0.3 || velocity > 400) {
-        _animController.forward(from: _dragProgress);
-      } else {
-        _animController.reverse(from: _dragProgress);
+      if (velocity > 260 || _curlProgress > 0.35) {
+        shouldComplete = true;
       }
     }
-  }
 
-  void _flipForward() {
-    if (_currentPage < widget.pageCount - 1 && !_animController.isAnimating) {
-      _isForward = true;
-      _isDragging = true;
-      _animController.forward(from: 0.0);
-    }
-  }
-
-  void _flipBackward() {
-    if (_currentPage > 0 && !_animController.isAnimating) {
-      _isForward = false;
-      _isDragging = true;
-      _animController.forward(from: 0.0);
-    }
+    final target = shouldComplete ? 1.0 : 0.0;
+    _animation = Tween<double>(
+      begin: _curlProgress,
+      end: target,
+    ).animate(CurvedAnimation(
+      parent: _animController,
+      curve: Curves.easeOutCubic,
+    ));
+    _animController.forward(from: 0.0);
   }
 
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
-    final height = MediaQuery.of(context).size.height;
+    final solidPaper = widget.paperColor.withAlpha(255);
 
-    return GestureDetector(
-      onHorizontalDragStart: _onHorizontalDragStart,
-      onHorizontalDragUpdate: _onHorizontalDragUpdate,
-      onHorizontalDragEnd: _onHorizontalDragEnd,
-      onTapUp: (details) {
-        if (details.localPosition.dx > width * 0.75) {
-          _flipForward();
-        } else if (details.localPosition.dx < width * 0.25) {
-          _flipBackward();
-        }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final w = constraints.maxWidth;
+        final h = constraints.maxHeight;
+
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onHorizontalDragStart: (d) => _onHorizontalDragStart(d, h),
+          onHorizontalDragUpdate: (d) => _onHorizontalDragUpdate(d, w),
+          onHorizontalDragEnd: _onHorizontalDragEnd,
+          child: Container(
+            color: solidPaper,
+            child: Stack(
+              fit: StackFit.expand,
+              clipBehavior: Clip.none,
+              children: [
+                _buildBasePage(w, h, solidPaper),
+                if (_curlProgress > 0.001) _buildCurlingPage(w, h, solidPaper),
+                if (widget.bookmarkBuilder != null)
+                  widget.bookmarkBuilder!(_curlProgress, _curlProgress > 0.001),
+              ],
+            ),
+          ),
+        );
       },
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          if (!_isDragging)
-            widget.builder(context, _currentPage)
-          else ...[
-            if (_isForward)
-              _buildForwardLayers(context, width, height)
-            else
-              _buildBackwardLayers(context, width, height),
-          ],
-        ],
-      ),
     );
   }
 
-  Widget _buildForwardLayers(BuildContext context, double w, double h) {
-    final nextPageIndex = _currentPage + 1;
-    final foldX = w * (1.0 - _dragProgress);
-    final flapWidth = math.min(w * 0.28, (w - foldX) * 0.6);
+  Widget _buildBasePage(double w, double h, Color solidPaper) {
+    int baseIndex;
+    if (_isForward) {
+      baseIndex = _curlProgress > 0.001
+          ? math.min(_currentPage + 1, widget.pageCount - 1)
+          : _currentPage;
+    } else {
+      baseIndex = _currentPage;
+    }
+
+    return Container(
+      width: w,
+      height: h,
+      color: solidPaper,
+      child: widget.builder(context, baseIndex),
+    );
+  }
+
+  Widget _buildCurlingPage(double w, double h, Color solidPaper) {
+    final double p = _curlProgress;
+
+    if (_isForward) {
+      final int topPageIndex = _currentPage;
+      return _buildForwardCurl(w, h, p, topPageIndex, solidPaper);
+    } else {
+      final int prevPageIndex = math.max(_currentPage - 1, 0);
+      return _buildBackwardCurl(w, h, p, prevPageIndex, solidPaper);
+    }
+  }
+
+  Widget _buildForwardCurl(
+      double w, double h, double p, int pageIndex, Color solidPaper) {
+    double foldXTop;
+    double foldXBottom;
+
+    if (_activeCorner == CurlCorner.bottomRight) {
+      foldXBottom = w * (1.0 - (p * 1.15)).clamp(0.0, 1.0);
+      foldXTop = w * (1.0 - (p * 0.85)).clamp(0.0, 1.0);
+    } else if (_activeCorner == CurlCorner.topRight) {
+      foldXTop = w * (1.0 - (p * 1.15)).clamp(0.0, 1.0);
+      foldXBottom = w * (1.0 - (p * 0.85)).clamp(0.0, 1.0);
+    } else {
+      foldXTop = w * (1.0 - p);
+      foldXBottom = w * (1.0 - p);
+    }
+
+    final double minFoldX = math.min(foldXTop, foldXBottom);
+    final double maxFoldX = math.max(foldXTop, foldXBottom);
+    final double rollWidth = math.min(26.0, math.min(minFoldX, w - maxFoldX));
 
     return Stack(
       fit: StackFit.expand,
+      clipBehavior: Clip.none,
       children: [
-        // 1. Destination Page (N+1) revealed underneath
-        ClipRect(
-          clipper: _RectClipper(Rect.fromLTRB(foldX, 0, w, h)),
-          child: widget.builder(context, nextPageIndex),
-        ),
-
-        // Drop shadow onto Destination Page
         Positioned(
-          left: foldX,
+          left: minFoldX,
           top: 0,
-          width: math.min(28.0, w - foldX),
-          height: h,
-          child: IgnorePointer(
-            child: Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Color(0x42000000), // 26% black
-                    Colors.transparent,
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-
-        // 2. Source Page (N) unpeeled region
-        ClipRect(
-          clipper: _RectClipper(Rect.fromLTRB(0, 0, foldX, h)),
-          child: widget.builder(context, _currentPage),
-        ),
-
-        // Crease shadow on Source Page
-        Positioned(
-          left: math.max(0.0, foldX - 16.0),
-          top: 0,
-          width: 16.0,
-          height: h,
-          child: IgnorePointer(
-            child: Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.transparent,
-                    Color(0x29000000), // 16% black
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-
-        // 3. Dynamic Curled Flap (Back of Page N)
-        if (flapWidth > 1.0)
-          Positioned(
-            left: foldX - flapWidth,
-            top: 0,
-            width: flapWidth,
-            height: h,
-            child: ClipRect(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  // Opaque paper base to prevent background bleeding
-                  Container(
-                    color: widget.paperColor.withAlpha(250),
-                  ),
-
-                  // Subtle ink show-through (Clean X-flip via setEntry, zero deprecation)
-                  if (widget.enablePaperTransparency)
-                    Opacity(
-                      opacity: 0.04,
-                      child: Transform(
-                        alignment: Alignment.center,
-                        transform: Matrix4.identity()..setEntry(0, 0, -1.0),
-                        child: widget.builder(context, _currentPage),
-                      ),
-                    ),
-
-                  // Dynamic curl lighting gradient
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          const Color(0x33000000), // 20% black
-                          const Color(0x4DFFFFFF), // 30% white
-                          widget.paperColor,
-                        ],
-                        stops: const [0.0, 0.35, 1.0],
-                      ),
-                    ),
-                  ),
+          bottom: 0,
+          width: math.min(38.0, w - minFoldX),
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+                colors: [
+                  Colors.black.withAlpha((115 * (1.0 - p)).round()),
+                  Colors.transparent,
                 ],
+              ),
+            ),
+          ),
+        ),
+        ClipPath(
+          clipper: _FoldClipper(foldXTop, foldXBottom),
+          child: Container(
+            width: w,
+            height: h,
+            color: solidPaper,
+            child: widget.builder(context, pageIndex),
+          ),
+        ),
+        if (rollWidth > 1.0)
+          Positioned(
+            left: math.max(0.0, minFoldX - rollWidth),
+            top: 0,
+            bottom: 0,
+            width: (maxFoldX - minFoldX) + (rollWidth * 1.6),
+            child: IgnorePointer(
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [
+                      Color.alphaBlend(const Color(0xFFC7B69B), solidPaper),
+                      solidPaper,
+                      Colors.white.withAlpha(80),
+                      Color.alphaBlend(const Color(0xFFB5A184), solidPaper),
+                    ],
+                    stops: const [0.0, 0.35, 0.65, 1.0],
+                  ),
+                ),
               ),
             ),
           ),
@@ -293,83 +308,63 @@ class _RealisticPageCurlState extends State<RealisticPageCurl>
     );
   }
 
-  Widget _buildBackwardLayers(BuildContext context, double w, double h) {
-    final prevPageIndex = _currentPage - 1;
-    final foldX = w * _dragProgress;
-    final flapWidth = math.min(w * 0.28, foldX * 0.6);
+  Widget _buildBackwardCurl(
+      double w, double h, double p, int pageIndex, Color solidPaper) {
+    final double foldX = w * p;
+    final double rollWidth = math.min(26.0, math.min(foldX, w - foldX));
 
     return Stack(
       fit: StackFit.expand,
+      clipBehavior: Clip.none,
       children: [
-        // 1. Current Page (N) stationary underneath
-        ClipRect(
-          clipper: _RectClipper(Rect.fromLTRB(foldX, 0, w, h)),
-          child: widget.builder(context, _currentPage),
-        ),
-
-        // Drop shadow onto Current Page
         Positioned(
           left: foldX,
           top: 0,
-          width: math.min(28.0, w - foldX),
-          height: h,
-          child: IgnorePointer(
-            child: Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Color(0x42000000), // 26% black
-                    Colors.transparent,
-                  ],
-                ),
+          bottom: 0,
+          width: math.min(38.0, w - foldX),
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+                colors: [
+                  Colors.black.withAlpha((115 * (1.0 - p)).round()),
+                  Colors.transparent,
+                ],
               ),
             ),
           ),
         ),
-
-        // 2. Previous Page (N-1) peeled in from left
         ClipRect(
-          clipper: _RectClipper(
-              Rect.fromLTRB(0, 0, math.max(0.0, foldX - flapWidth), h)),
-          child: widget.builder(context, prevPageIndex),
-        ),
-
-        // 3. Backward Curled Flap
-        if (flapWidth > 1.0)
-          Positioned(
-            left: foldX - flapWidth,
-            top: 0,
-            width: flapWidth,
+          clipper: _RectClipper(0.0, foldX),
+          child: Container(
+            width: w,
             height: h,
-            child: ClipRect(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Container(
-                    color: widget.paperColor.withAlpha(250),
+            color: solidPaper,
+            child: widget.builder(context, pageIndex),
+          ),
+        ),
+        if (rollWidth > 1.0)
+          Positioned(
+            left: math.max(0.0, foldX - rollWidth),
+            top: 0,
+            bottom: 0,
+            width: rollWidth * 1.6,
+            child: IgnorePointer(
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [
+                      Color.alphaBlend(const Color(0xFFC7B69B), solidPaper),
+                      solidPaper,
+                      Colors.white.withAlpha(80),
+                      Color.alphaBlend(const Color(0xFFB5A184), solidPaper),
+                    ],
+                    stops: const [0.0, 0.35, 0.65, 1.0],
                   ),
-                  if (widget.enablePaperTransparency)
-                    Opacity(
-                      opacity: 0.04,
-                      child: Transform(
-                        alignment: Alignment.center,
-                        transform: Matrix4.identity()..setEntry(0, 0, -1.0),
-                        child: widget.builder(context, prevPageIndex),
-                      ),
-                    ),
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          widget.paperColor,
-                          const Color(0x4DFFFFFF),
-                          const Color(0x33000000),
-                        ],
-                        stops: const [0.0, 0.65, 1.0],
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
@@ -379,12 +374,39 @@ class _RealisticPageCurlState extends State<RealisticPageCurl>
 }
 
 class _RectClipper extends CustomClipper<Rect> {
-  final Rect clipRect;
-  _RectClipper(this.clipRect);
+  final double startX;
+  final double endX;
+
+  _RectClipper(this.startX, this.endX);
 
   @override
-  Rect getClip(Size size) => clipRect;
+  Rect getClip(Size size) {
+    return Rect.fromLTWH(startX, 0, math.max(0.0, endX - startX), size.height);
+  }
 
   @override
-  bool shouldReclip(_RectClipper oldClipper) => oldClipper.clipRect != clipRect;
+  bool shouldReclip(_RectClipper old) =>
+      old.startX != startX || old.endX != endX;
+}
+
+class _FoldClipper extends CustomClipper<Path> {
+  final double foldXTop;
+  final double foldXBottom;
+
+  _FoldClipper(this.foldXTop, this.foldXBottom);
+
+  @override
+  Path getClip(Size size) {
+    final path = Path();
+    path.moveTo(0, 0);
+    path.lineTo(foldXTop.clamp(0.0, size.width), 0);
+    path.lineTo(foldXBottom.clamp(0.0, size.width), size.height);
+    path.lineTo(0, size.height);
+    path.close();
+    return path;
+  }
+
+  @override
+  bool shouldReclip(_FoldClipper old) =>
+      old.foldXTop != foldXTop || old.foldXBottom != foldXBottom;
 }

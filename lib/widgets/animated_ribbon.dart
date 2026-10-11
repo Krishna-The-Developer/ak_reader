@@ -12,10 +12,7 @@ class AnimatedRibbonBookmark extends StatelessWidget {
       curve: Curves.easeOutBack,
       top: isBookmarked ? 0 : -88,
       right: 28,
-      child: CustomPaint(
-        size: const Size(26, 75),
-        painter: _RibbonPainter(),
-      ),
+      child: CustomPaint(size: const Size(26, 75), painter: _RibbonPainter()),
     );
   }
 }

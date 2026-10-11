@@ -1,5 +1,7 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
+
 import '../models/book_model.dart';
 
 class ShelfBookItem extends StatelessWidget {
@@ -67,7 +69,7 @@ class ShelfBookItem extends StatelessWidget {
                     colors: [
                       Colors.black54,
                       Colors.white10,
-                      Colors.transparent
+                      Colors.transparent,
                     ],
                   ),
                 ),
@@ -88,7 +90,7 @@ class ShelfBookItem extends StatelessWidget {
         color: _getSpineColor(book.title),
         borderRadius: BorderRadius.circular(3),
         boxShadow: const [
-          BoxShadow(color: Colors.black45, blurRadius: 4, offset: Offset(2, 3))
+          BoxShadow(color: Colors.black45, blurRadius: 4, offset: Offset(2, 3)),
         ],
       ),
       child: Stack(
@@ -112,15 +114,17 @@ class ShelfBookItem extends StatelessWidget {
             ),
           ),
           Positioned(
-              top: 14,
-              left: 0,
-              right: 0,
-              child: Container(height: 1.5, color: Colors.black38)),
+            top: 14,
+            left: 0,
+            right: 0,
+            child: Container(height: 1.5, color: Colors.black38),
+          ),
           Positioned(
-              bottom: 14,
-              left: 0,
-              right: 0,
-              child: Container(height: 1.5, color: Colors.black38)),
+            bottom: 14,
+            left: 0,
+            right: 0,
+            child: Container(height: 1.5, color: Colors.black38),
+          ),
         ],
       ),
     );
@@ -136,7 +140,10 @@ class ShelfBookItem extends StatelessWidget {
           Text(
             book.format.toUpperCase(),
             style: const TextStyle(
-                color: Colors.amber, fontSize: 10, fontWeight: FontWeight.bold),
+              color: Colors.amber,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           const SizedBox(height: 6),
           Text(
@@ -145,7 +152,10 @@ class ShelfBookItem extends StatelessWidget {
             textAlign: TextAlign.center,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-                color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           const SizedBox(height: 4),
           Text(

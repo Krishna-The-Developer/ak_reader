@@ -1,0 +1,46 @@
+name: moon_reader_flutter
+description: "A modern book reading application built with Flutter."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+
+dependencies:
+  flutter:
+  assets:
+    - assets/audio/
+    sdk: flutter
+
+  # UI & Icons
+  cupertino_icons: ^1.0.8
+
+  # Book Reading, Formats & Audio (TTS)
+  pdfx: ^2.6.0
+  flutter_tts: ^4.1.0
+  archive: ^3.6.1
+  epubx: ^4.0.0
+
+  # Local Storage & Database
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+
+  # File Access & Settings
+  file_picker: ^8.1.2
+  path_provider: ^2.1.6
+  shared_preferences: ^2.2.3
+  permission_handler: ^11.3.1
+  google_mlkit_text_recognition: ^0.17.1
+  image_picker: ^1.2.4
+  audioplayers: ^6.8.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  assets:
+    - assets/audio/
+  uses-material-design: true

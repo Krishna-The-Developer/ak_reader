@@ -4,9 +4,15 @@
         <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="28"/>
         <uses-permission android:name="android.permission.CAMERA"/>
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
+    
+    <!-- Storage permissions for reading Books (PDF, EPUB, CBZ) -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+
     <application
+        android:usesCleartextTraffic="true"
         android:requestLegacyExternalStorage="true"
-        android:label="AK reader"
+        android:label="AK Reader"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

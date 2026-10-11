@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:archive/archive.dart';
 import 'package:epubx/epubx.dart' as epub;
 import 'package:flutter/foundation.dart';
@@ -67,7 +68,10 @@ class FormatLoader {
 
       if (pages.isNotEmpty) {
         return ParsedBookContent(
-            textChunks: [], imagePages: pages, isImageBook: true);
+          textChunks: [],
+          imagePages: pages,
+          isImageBook: true,
+        );
       }
     } catch (e) {
       debugPrint("PDF Load Error: $e");
@@ -116,7 +120,10 @@ class FormatLoader {
 
       if (images.isNotEmpty) {
         return ParsedBookContent(
-            textChunks: [], imagePages: images, isImageBook: true);
+          textChunks: [],
+          imagePages: images,
+          isImageBook: true,
+        );
       }
     } catch (e) {
       debugPrint("CBZ Load Error: $e");
@@ -187,8 +194,10 @@ class FormatLoader {
           if (f.content is List<int>) {
             rawHtml = utf8.decode(f.content as List<int>, allowMalformed: true);
           } else if (f.rawContent != null) {
-            rawHtml =
-                utf8.decode(f.rawContent!.toUint8List(), allowMalformed: true);
+            rawHtml = utf8.decode(
+              f.rawContent!.toUint8List(),
+              allowMalformed: true,
+            );
           }
 
           final plain = _cleanHtmlPreservingParagraphs(rawHtml);
@@ -203,12 +212,15 @@ class FormatLoader {
 
     if (chunks.isNotEmpty) {
       return ParsedBookContent(
-          textChunks: chunks, imagePages: [], isImageBook: false);
+        textChunks: chunks,
+        imagePages: [],
+        isImageBook: false,
+      );
     }
 
     return ParsedBookContent(
       textChunks: [
-        "Unable to read text from this EPUB book. The file may be DRM-protected or corrupted."
+        "Unable to read text from this EPUB book. The file may be DRM-protected or corrupted.",
       ],
       imagePages: [],
       isImageBook: false,
@@ -235,7 +247,10 @@ class FormatLoader {
       if (chunks.isEmpty) chunks.add("Empty document.");
 
       return ParsedBookContent(
-          textChunks: chunks, imagePages: [], isImageBook: false);
+        textChunks: chunks,
+        imagePages: [],
+        isImageBook: false,
+      );
     } catch (e) {
       return ParsedBookContent(
         textChunks: ["Error opening text file: $e"],
@@ -251,11 +266,17 @@ class FormatLoader {
 
     return html
         .replaceAll(
-            RegExp(r'<style[^>]*>[\s\S]*?</style>', caseSensitive: false), '')
+          RegExp(r'<style[^>]*>[\s\S]*?</style>', caseSensitive: false),
+          '',
+        )
         .replaceAll(
-            RegExp(r'<script[^>]*>[\s\S]*?</script>', caseSensitive: false), '')
+          RegExp(r'<script[^>]*>[\s\S]*?</script>', caseSensitive: false),
+          '',
+        )
         .replaceAll(
-            RegExp(r'</(p|div|h[1-6]|li|tr)>', caseSensitive: false), '\n\n')
+          RegExp(r'</(p|div|h[1-6]|li|tr)>', caseSensitive: false),
+          '\n\n',
+        )
         .replaceAll(RegExp(r'<(br|hr)[^>]*>', caseSensitive: false), '\n')
         .replaceAll(RegExp(r'<[^>]*>'), ' ')
         .replaceAll('&nbsp;', ' ')

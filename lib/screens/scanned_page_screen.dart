@@ -1,7 +1,9 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:path_provider/path_provider.dart';
+
 import '../models/book_model.dart';
 import '../models/scanned_page.dart';
 
@@ -32,14 +34,17 @@ class _ScannedPageScreenState extends State<ScannedPageScreen> {
   }
 
   void _editBlock(int index) {
-    final controller =
-        TextEditingController(text: _pageData.blocks[index].text);
+    final controller = TextEditingController(
+      text: _pageData.blocks[index].text,
+    );
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF2C1E14),
-        title:
-            const Text('Edit OCR Text', style: TextStyle(color: Colors.white)),
+        title: const Text(
+          'Edit OCR Text',
+          style: TextStyle(color: Colors.white),
+        ),
         content: TextField(
           controller: controller,
           maxLines: 8,
@@ -53,20 +58,25 @@ class _ScannedPageScreenState extends State<ScannedPageScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child:
-                const Text('Cancel', style: TextStyle(color: Colors.white60)),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Colors.white60),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFD4A373)),
+              backgroundColor: const Color(0xFFD4A373),
+            ),
             onPressed: () {
               setState(() {
                 _pageData.blocks[index].text = controller.text.trim();
               });
               Navigator.pop(ctx);
             },
-            child: const Text('Apply Changes',
-                style: TextStyle(color: Colors.black)),
+            child: const Text(
+              'Apply Changes',
+              style: TextStyle(color: Colors.black),
+            ),
           ),
         ],
       ),
@@ -127,8 +137,10 @@ class _ScannedPageScreenState extends State<ScannedPageScreen> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF2A170C),
         elevation: 0,
-        title: const Text('Scanned Book Page',
-            style: TextStyle(color: Colors.white, fontSize: 18)),
+        title: const Text(
+          'Scanned Book Page',
+          style: TextStyle(color: Colors.white, fontSize: 18),
+        ),
         actions: [
           IconButton(
             tooltip: _showOriginalPreview
@@ -164,10 +176,7 @@ class _ScannedPageScreenState extends State<ScannedPageScreen> {
   Widget _buildOriginalImage() {
     return Center(
       child: InteractiveViewer(
-        child: Image.file(
-          File(_pageData.imagePath),
-          fit: BoxFit.contain,
-        ),
+        child: Image.file(File(_pageData.imagePath), fit: BoxFit.contain),
       ),
     );
   }
@@ -265,11 +274,7 @@ class _ScannedPageScreenState extends State<ScannedPageScreen> {
         borderRadius: BorderRadius.circular(4),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 2.0),
-          child: Text(
-            block.text,
-            textAlign: block.alignment,
-            style: style,
-          ),
+          child: Text(block.text, textAlign: block.alignment, style: style),
         ),
       ),
     );
@@ -290,11 +295,14 @@ class _ScannedPageScreenState extends State<ScannedPageScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Paper Color',
-                    style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold)),
+                const Text(
+                  'Paper Color',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(height: 10),
                 Row(
                   children: [
@@ -324,8 +332,9 @@ class _ScannedPageScreenState extends State<ScannedPageScreen> {
                 ),
                 const SizedBox(height: 18),
                 const Text(
-                    'Font Size: \${_pageData.fontSize.toStringAsFixed(1)}',
-                    style: TextStyle(color: Colors.white70, fontSize: 13)),
+                  'Font Size: \${_pageData.fontSize.toStringAsFixed(1)}',
+                  style: TextStyle(color: Colors.white70, fontSize: 13),
+                ),
                 Slider(
                   value: _pageData.fontSize,
                   min: 12.0,
@@ -337,8 +346,9 @@ class _ScannedPageScreenState extends State<ScannedPageScreen> {
                   },
                 ),
                 const Text(
-                    'Line Spacing: \${_pageData.lineSpacing.toStringAsFixed(1)}',
-                    style: TextStyle(color: Colors.white70, fontSize: 13)),
+                  'Line Spacing: \${_pageData.lineSpacing.toStringAsFixed(1)}',
+                  style: TextStyle(color: Colors.white70, fontSize: 13),
+                ),
                 Slider(
                   value: _pageData.lineSpacing,
                   min: 1.3,

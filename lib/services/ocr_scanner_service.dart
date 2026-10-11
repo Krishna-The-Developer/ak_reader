@@ -1,7 +1,9 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:image_picker/image_picker.dart';
+
 import '../models/scanned_page.dart';
 
 class OcrScannerService {
@@ -10,10 +12,7 @@ class OcrScannerService {
   /// Captures an image from Camera or picks from Gallery
   static Future<File?> pickPageImage(ImageSource source) async {
     try {
-      final picked = await _picker.pickImage(
-        source: source,
-        imageQuality: 92,
-      );
+      final picked = await _picker.pickImage(source: source, imageQuality: 92);
       if (picked != null) {
         return File(picked.path);
       }

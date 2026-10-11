@@ -1,428 +1,477 @@
-import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
-import 'package:archive/archive.dart';
-import 'package:epubx/epubx.dart' as epub;
-import 'package:flutter/foundation.dart';
-import 'package:pdfx/pdfx.dart';
+import "dart:convert";
+import "dart:io";
+import "package:archive/archive.dart";
+import "package:flutter/foundation.dart";
+import "package:pdfx/pdfx.dart";
 
-enum PageStatus { notRequested, loading, ready, failed }
+enum PageStatus { loading, ready, failed }
 
 class ReconstructedPage {
-  final int index;
+  final int pageIndex;
   final PageStatus status;
-  final Uint8List? imageBytes;
   final String? textContent;
   final bool isImage;
+  final Uint8List? imageBytes;
   final String? errorMessage;
 
   const ReconstructedPage({
-    required this.index,
+    required this.pageIndex,
     required this.status,
-    this.imageBytes,
     this.textContent,
     this.isImage = false,
+    this.imageBytes,
     this.errorMessage,
   });
-
-  ReconstructedPage copyWith({
-    PageStatus? status,
-    Uint8List? imageBytes,
-    String? textContent,
-    bool? isImage,
-    String? errorMessage,
-  }) {
-    return ReconstructedPage(
-      index: index,
-      status: status ?? this.status,
-      imageBytes: imageBytes ?? this.imageBytes,
-      textContent: textContent ?? this.textContent,
-      isImage: isImage ?? this.isImage,
-      errorMessage: errorMessage ?? this.errorMessage,
-    );
-  }
 }
 
-/// Bounded LRU Cache & Demand-Driven Progressive Loading Controller
 class ProgressiveDocumentController extends ChangeNotifier {
   final String filePath;
   final String format;
   final int maxCacheSize;
 
-  int _totalPages = 1;
-  int get totalPages => _totalPages;
-
   bool _isInitialized = false;
   bool get isInitialized => _isInitialized;
 
-  bool _isImageBook = false;
-  bool get isImageBook => _isImageBook;
+  int _totalPages = 0;
+  int get totalPages => _totalPages;
 
-  String? _initError;
-  String? get initError => _initError;
+  String _bookTitle = "";
+  String get bookTitle => _bookTitle;
 
-  // Bounded page memory cache
-  final Map<int, ReconstructedPage> _cache = {};
-  final List<int> _lruOrder = [];
+  String _bookAuthor = "";
+  String get bookAuthor => _bookAuthor;
 
-  // Active document handles
-  PdfDocument? _pdfDoc;
-  Archive? _cbzArchive;
-  List<ArchiveFile>? _cbzImageFiles;
-  final List<String> _textChunks = [];
+  final Map<int, ReconstructedPage> _pageCache = {};
+  final List<String> _epubRawPages = [];
 
-  int _currentReadingIndex = 0;
-  final Set<int> _activeLoading = {};
-  bool _isDisposed = false;
+  PdfDocument? _pdfDocument;
+  double _currentFontSize = 8.0;
 
   ProgressiveDocumentController({
     required this.filePath,
     required this.format,
-    this.maxCacheSize = 25,
+    this.maxCacheSize = 20,
   });
 
-  /// Stage A: Fast Header Scan & Initialization (<50ms)
   Future<void> initialize() async {
-    final file = File(filePath);
-    if (!await file.exists()) {
-      _initError = "File not found: $filePath";
+    try {
+      final ext = format.toLowerCase().trim();
+      if (ext == "epub") {
+        await _loadEpubEngine();
+      } else if (ext == "pdf") {
+        await _loadPdfEngine();
+      } else {
+        await _loadTxtEngine();
+      }
       _isInitialized = true;
       notifyListeners();
-      return;
-    }
-
-    String fmt = format.toLowerCase().replaceAll('.', '').trim();
-    if (fmt.isEmpty) {
-      fmt = filePath.split('.').last.toLowerCase().replaceAll('.', '').trim();
-    }
-
-    try {
-      if (fmt == 'pdf') {
-        _isImageBook = true;
-        _pdfDoc = await PdfDocument.openFile(filePath);
-        _totalPages = _pdfDoc!.pagesCount > 0 ? _pdfDoc!.pagesCount : 1;
-      } else if (fmt == 'cbz' || fmt == 'cbr' || fmt == 'zip') {
-        _isImageBook = true;
-        final bytes = await file.readAsBytes();
-        _cbzArchive = ZipDecoder().decodeBytes(bytes);
-        _cbzImageFiles = _cbzArchive!.files.where((f) {
-          final n = f.name.toLowerCase();
-          return f.isFile &&
-              !n.contains('__macosx') &&
-              !n.startsWith('.') &&
-              (n.endsWith('.jpg') ||
-                  n.endsWith('.png') ||
-                  n.endsWith('.webp') ||
-                  n.endsWith('.jpeg'));
-        }).toList();
-        _cbzImageFiles!.sort((a, b) => a.name.compareTo(b.name));
-        _totalPages = _cbzImageFiles!.isNotEmpty ? _cbzImageFiles!.length : 1;
-      } else if (fmt == 'epub') {
-        _isImageBook = false;
-        await _parseEpubStructure(file);
-      } else {
-        _isImageBook = false;
-        await _parsePlainText(file);
-      }
     } catch (e) {
-      _initError = "Initialization error: $e";
+      _isInitialized = true;
       _totalPages = 1;
-    }
-
-    _isInitialized = true;
-    notifyListeners();
-  }
-
-  /// Fast semantic parsing for EPUB into paginated chunks
-  Future<void> _parseEpubStructure(File file) async {
-    final bytes = await file.readAsBytes();
-    try {
-      final book = await epub.EpubReader.readBook(bytes);
-      for (final chap in book.Chapters ?? []) {
-        final plain = _stripHtml(chap.HtmlContent ?? '');
-        if (plain.isNotEmpty) _chunkText(plain, _textChunks);
-        for (final sub in chap.SubChapters ?? []) {
-          final subPlain = _stripHtml(sub.HtmlContent ?? '');
-          if (subPlain.isNotEmpty) _chunkText(subPlain, _textChunks);
-        }
-      }
-      if (_textChunks.isEmpty && book.Content?.Html != null) {
-        for (final h in book.Content!.Html!.values) {
-          final plain = _stripHtml(h.Content ?? '');
-          if (plain.isNotEmpty) _chunkText(plain, _textChunks);
-        }
-      }
-    } catch (_) {}
-
-    // Fallback: Raw XHTML extraction from ZIP
-    if (_textChunks.isEmpty) {
-      final archive = ZipDecoder().decodeBytes(bytes);
-      for (final f in archive.files) {
-        final n = f.name.toLowerCase();
-        if (f.isFile && (n.endsWith('.xhtml') || n.endsWith('.html'))) {
-          String raw = "";
-          if (f.content is List<int>) {
-            raw = utf8.decode(f.content as List<int>, allowMalformed: true);
-          } else if (f.rawContent != null) {
-            raw =
-                utf8.decode(f.rawContent!.toUint8List(), allowMalformed: true);
-          }
-          final plain = _stripHtml(raw);
-          if (plain.isNotEmpty) _chunkText(plain, _textChunks);
-        }
-      }
-    }
-
-    if (_textChunks.isEmpty) {
-      _textChunks.add("Unable to parse text from EPUB document.");
-    }
-    _totalPages = _textChunks.length;
-  }
-
-  Future<void> _parsePlainText(File file) async {
-    final bytes = await file.readAsBytes();
-    String text;
-    try {
-      text = utf8.decode(bytes);
-    } catch (_) {
-      try {
-        text = latin1.decode(bytes);
-      } catch (_) {
-        text = String.fromCharCodes(bytes);
-      }
-    }
-    _chunkText(text, _textChunks);
-    if (_textChunks.isEmpty) _textChunks.add("Empty document.");
-    _totalPages = _textChunks.length;
-  }
-
-  /// Retrieve page from memory or kick off demand-driven load
-  ReconstructedPage getPage(int index) {
-    if (_cache.containsKey(index)) {
-      _recordAccess(index);
-      return _cache[index]!;
-    }
-
-    // Schedule high-priority retrieval if not already active
-    _schedulePageLoad(index, highPriority: true);
-
-    return ReconstructedPage(
-      index: index,
-      status: PageStatus.loading,
-      isImage: _isImageBook,
-    );
-  }
-
-  /// Stages B, C & D: Update viewport position and preload nearby window
-  void setReadingPosition(int index) {
-    _currentReadingIndex = index;
-
-    // High priority: Current page, next page, previous page
-    _schedulePageLoad(index, highPriority: true);
-    if (index + 1 < _totalPages) {
-      _schedulePageLoad(index + 1, highPriority: true);
-    }
-    if (index - 1 >= 0) _schedulePageLoad(index - 1, highPriority: false);
-
-    // Lookahead prefetch: next batch
-    for (int offset = 2; offset <= 4; offset++) {
-      final forward = index + offset;
-      if (forward < _totalPages) {
-        _schedulePageLoad(forward, highPriority: false);
-      }
-    }
-
-    _enforceCacheBounds();
-  }
-
-  void _schedulePageLoad(int index, {required bool highPriority}) {
-    if (index < 0 || index >= _totalPages || _isDisposed) return;
-    if (_cache.containsKey(index) &&
-        _cache[index]!.status == PageStatus.ready) {
-      return;
-    }
-    if (_activeLoading.contains(index)) return;
-
-    _activeLoading.add(index);
-
-    // Asynchronous background isolate/queue execution
-    Future.microtask(() async {
-      if (_isDisposed) return;
-      try {
-        ReconstructedPage page;
-        if (_pdfDoc != null) {
-          page = await _renderPdfPage(index);
-        } else if (_cbzImageFiles != null) {
-          page = await _extractCbzPage(index);
-        } else {
-          page = _extractTextPage(index);
-        }
-
-        if (!_isDisposed) {
-          _cache[index] = page;
-          _recordAccess(index);
-          _activeLoading.remove(index);
-          notifyListeners();
-        }
-      } catch (e) {
-        if (!_isDisposed) {
-          _cache[index] = ReconstructedPage(
-            index: index,
-            status: PageStatus.failed,
-            errorMessage: e.toString(),
-            isImage: _isImageBook,
-          );
-          _activeLoading.remove(index);
-          notifyListeners();
-        }
-      }
-    });
-  }
-
-  Future<ReconstructedPage> _renderPdfPage(int index) async {
-    final pageNum = index + 1;
-    final page = await _pdfDoc!.getPage(pageNum);
-    final rendered = await page.render(
-      width: page.width * 2,
-      height: page.height * 2,
-      format: PdfPageImageFormat.jpeg,
-      backgroundColor: '#FFFFFF',
-    );
-    await page.close();
-
-    if (rendered != null) {
-      return ReconstructedPage(
-        index: index,
-        status: PageStatus.ready,
-        imageBytes: rendered.bytes,
-        isImage: true,
+      _pageCache[0] = ReconstructedPage(
+        pageIndex: 0,
+        status: PageStatus.failed,
+        errorMessage: "Error loading book: $e",
       );
+      notifyListeners();
     }
-    throw Exception("Page rendering produced null output");
   }
 
-  Future<ReconstructedPage> _extractCbzPage(int index) async {
-    if (index >= _cbzImageFiles!.length) {
-      throw Exception("CBZ page out of bounds");
-    }
-    final file = _cbzImageFiles![index];
-    Uint8List? bytes;
-    if (file.content is List<int>) {
-      bytes = Uint8List.fromList(file.content as List<int>);
-    } else if (file.rawContent != null) {
-      bytes = file.rawContent!.toUint8List();
+  Future<void> _loadEpubEngine() async {
+    final file = File(filePath);
+    if (!await file.exists()) {
+      throw Exception("EPUB file does not exist at $filePath");
     }
 
-    if (bytes != null && bytes.isNotEmpty) {
-      return ReconstructedPage(
-        index: index,
-        status: PageStatus.ready,
-        imageBytes: bytes,
-        isImage: true,
-      );
+    final bytes = await file.readAsBytes();
+    final archive = ZipDecoder().decodeBytes(bytes);
+
+    final containerFile = _findFile(archive, "meta-inf/container.xml");
+    if (containerFile == null) {
+      throw Exception("Invalid EPUB: META-INF/container.xml missing");
     }
-    throw Exception("Failed to extract CBZ image bytes");
+
+    final containerXml =
+        utf8.decode(containerFile.content as List<int>, allowMalformed: true);
+    final fullPathMatch =
+        RegExp(r"full-path\s*=\s*[\x22\x27]([^\x22\x27]+)[\x22\x27]")
+            .firstMatch(containerXml);
+    final opfRelativePath = fullPathMatch?.group(1) ?? "OEBPS/content.opf";
+
+    var opfFile = _findFile(archive, opfRelativePath);
+    opfFile ??= archive.files.cast<ArchiveFile?>().firstWhere(
+          (f) => f != null && f.name.toLowerCase().endsWith(".opf"),
+          orElse: () => null,
+        );
+
+    if (opfFile == null) {
+      throw Exception("Invalid EPUB: OPF package file not found");
+    }
+
+    final opfDir = opfFile.name.contains("/")
+        ? opfFile.name.substring(0, opfFile.name.lastIndexOf("/"))
+        : "";
+    final opfContent =
+        utf8.decode(opfFile.content as List<int>, allowMalformed: true);
+
+    final titleMatch =
+        RegExp(r"<dc:title[^>]*>([^<]+)</dc:title>", caseSensitive: false)
+            .firstMatch(opfContent);
+    if (titleMatch != null) {
+      _bookTitle = titleMatch.group(1)!.trim();
+    }
+
+    final authorMatch =
+        RegExp(r"<dc:creator[^>]*>([^<]+)</dc:creator>", caseSensitive: false)
+            .firstMatch(opfContent);
+    if (authorMatch != null) {
+      _bookAuthor = authorMatch.group(1)!.trim();
+    }
+
+    final manifestMap = <String, String>{};
+    final itemRegex = RegExp(r"<item\b([^>]+)/?>", caseSensitive: false);
+    for (final m in itemRegex.allMatches(opfContent)) {
+      final attrs = m.group(1) ?? "";
+      final idM = RegExp(r"id\s*=\s*[\x22\x27]([^\x22\x27]+)[\x22\x27]")
+          .firstMatch(attrs);
+      final hrefM = RegExp(r"href\s*=\s*[\x22\x27]([^\x22\x27]+)[\x22\x27]")
+          .firstMatch(attrs);
+      if (idM != null && hrefM != null) {
+        final id = idM.group(1)!;
+        final rawHref = Uri.decodeFull(hrefM.group(1)!.split("#").first);
+        final fullPath =
+            _normalizePath(opfDir.isNotEmpty ? "$opfDir/$rawHref" : rawHref);
+        manifestMap[id] = fullPath;
+      }
+    }
+
+    final spinePaths = <String>[];
+    final itemrefRegex = RegExp(r"<itemref\b([^>]+)/?>", caseSensitive: false);
+    for (final m in itemrefRegex.allMatches(opfContent)) {
+      final attrs = m.group(1) ?? "";
+      final idrefM = RegExp(r"idref\s*=\s*[\x22\x27]([^\x22\x27]+)[\x22\x27]")
+          .firstMatch(attrs);
+      if (idrefM != null) {
+        final idref = idrefM.group(1)!;
+        final resolvedPath = manifestMap[idref];
+        if (resolvedPath != null && !spinePaths.contains(resolvedPath)) {
+          spinePaths.add(resolvedPath);
+        }
+      }
+    }
+
+    _epubRawPages.clear();
+    for (final path in spinePaths) {
+      final chapterFile = _findFile(archive, path);
+      if (chapterFile == null) {
+        continue;
+      }
+
+      final rawHtml =
+          utf8.decode(chapterFile.content as List<int>, allowMalformed: true);
+      final cleanText = _cleanHtmlToText(rawHtml);
+
+      if (cleanText.length < 20) {
+        continue;
+      }
+
+      final paginatedChunks = _paginateText(cleanText, _currentFontSize);
+      _epubRawPages.addAll(paginatedChunks);
+    }
+
+    if (_epubRawPages.isEmpty) {
+      _epubRawPages.add("This document is empty or its content is protected.");
+    }
+
+    _totalPages = _epubRawPages.length;
+    _cacheEpubPages();
   }
 
-  ReconstructedPage _extractTextPage(int index) {
-    if (index < _textChunks.length) {
-      return ReconstructedPage(
-        index: index,
+  void _cacheEpubPages() {
+    _pageCache.clear();
+    for (int i = 0; i < _epubRawPages.length; i++) {
+      _pageCache[i] = ReconstructedPage(
+        pageIndex: i,
         status: PageStatus.ready,
-        textContent: _textChunks[index],
+        textContent: _epubRawPages[i],
         isImage: false,
       );
     }
+  }
+
+  String _cleanHtmlToText(String html) {
+    var s = html
+        .replaceAll(
+            RegExp(r"<style[^>]*>[\s\S]*?</style>", caseSensitive: false), "")
+        .replaceAll(
+            RegExp(r"<script[^>]*>[\s\S]*?</script>", caseSensitive: false), "")
+        .replaceAll(
+            RegExp(r"<head[^>]*>[\s\S]*?</head>", caseSensitive: false), "")
+        .replaceAll(
+            RegExp(r"<svg[^>]*>[\s\S]*?</svg>", caseSensitive: false), "");
+
+    s = s
+        .replaceAll(
+            RegExp(r"</?(?:p|div|h[1-6]|blockquote|pre|section|article)[^>]*>",
+                caseSensitive: false),
+            "\n\n")
+        .replaceAll(RegExp(r"<br\s*/?>", caseSensitive: false), "\n")
+        .replaceAll(RegExp(r"<li[^>]*>", caseSensitive: false), "\n- ")
+        .replaceAll(RegExp(r"</li>", caseSensitive: false), "\n");
+
+    s = s.replaceAll(RegExp(r"<[^>]+>"), "");
+
+    s = s
+        .replaceAll("&nbsp;", " ")
+        .replaceAll("&#160;", " ")
+        .replaceAll("&amp;", "&")
+        .replaceAll("&lt;", "<")
+        .replaceAll("&gt;", ">")
+        .replaceAll("&quot;", "\"")
+        .replaceAll("&apos;", "'")
+        .replaceAll("&rsquo;", "'")
+        .replaceAll("&lsquo;", "'")
+        .replaceAll("&rdquo;", "\"")
+        .replaceAll("&ldquo;", "\"")
+        .replaceAll("&mdash;", "--")
+        .replaceAll("&ndash;", "-")
+        .replaceAll("&hellip;", "...")
+        .replaceAll("&bull;", "-")
+        .replaceAll("&copy;", "(c)")
+        .replaceAll("&reg;", "(r)")
+        .replaceAll("&trade;", "(tm)")
+        .replaceAllMapped(RegExp(r"&#(\d+);"), (m) {
+      try {
+        return String.fromCharCode(int.parse(m.group(1)!));
+      } catch (_) {
+        return "";
+      }
+    }).replaceAllMapped(RegExp(r"&#x([0-9a-fA-F]+);"), (m) {
+      try {
+        return String.fromCharCode(int.parse(m.group(1)!, radix: 16));
+      } catch (_) {
+        return "";
+      }
+    });
+
+    s = s.replaceAll(RegExp(r"[ \t]+"), " ");
+    s = s.replaceAll(RegExp(r"\n\s*\n\s*\n+"), "\n\n");
+    return s.trim();
+  }
+
+  List<String> _paginateText(String text, double fontSize) {
+    if (text.isEmpty) {
+      return [];
+    }
+
+    final targetChars = ((14.0 / fontSize) * 1050).round().clamp(550, 2600);
+    final pages = <String>[];
+    final paragraphs = text.split("\n\n");
+    var currentChunk = StringBuffer();
+
+    for (final para in paragraphs) {
+      final p = para.trim();
+      if (p.isEmpty) {
+        continue;
+      }
+
+      if (p.length > targetChars) {
+        if (currentChunk.isNotEmpty) {
+          pages.add(currentChunk.toString().trim());
+          currentChunk = StringBuffer();
+        }
+
+        final sentences = p.split(RegExp(r"(?<=[.?!])\s+"));
+        for (final sentence in sentences) {
+          if (currentChunk.length + sentence.length > targetChars &&
+              currentChunk.isNotEmpty) {
+            pages.add(currentChunk.toString().trim());
+            currentChunk = StringBuffer();
+          }
+          if (currentChunk.isNotEmpty) {
+            currentChunk.write(" ");
+          }
+          currentChunk.write(sentence);
+        }
+        continue;
+      }
+
+      if (currentChunk.length + p.length > targetChars &&
+          currentChunk.isNotEmpty) {
+        pages.add(currentChunk.toString().trim());
+        currentChunk = StringBuffer();
+      }
+
+      if (currentChunk.isNotEmpty) {
+        currentChunk.write("\n\n");
+      }
+      currentChunk.write(p);
+    }
+
+    if (currentChunk.isNotEmpty) {
+      final last = currentChunk.toString().trim();
+      if (last.isNotEmpty) {
+        pages.add(last);
+      }
+    }
+
+    return pages;
+  }
+
+  ArchiveFile? _findFile(Archive archive, String path) {
+    final clean = _normalizePath(path).toLowerCase();
+    for (final f in archive.files) {
+      if (_normalizePath(f.name).toLowerCase() == clean) {
+        return f;
+      }
+    }
+    return null;
+  }
+
+  String _normalizePath(String rawPath) {
+    var p = rawPath.replaceAll(r"\", "/").replaceAll("//", "/");
+    if (p.startsWith("/")) {
+      p = p.substring(1);
+    }
+    final parts = p.split("/");
+    final resolved = <String>[];
+    for (final part in parts) {
+      if (part == "." || part.isEmpty) {
+        continue;
+      }
+      if (part == "..") {
+        if (resolved.isNotEmpty) {
+          resolved.removeLast();
+        }
+      } else {
+        resolved.add(part);
+      }
+    }
+    return resolved.join("/");
+  }
+
+  Future<void> _loadPdfEngine() async {
+    _pdfDocument = await PdfDocument.openFile(filePath);
+    _totalPages = _pdfDocument!.pagesCount;
+    if (_bookTitle.isEmpty) {
+      final fileName = filePath.split(Platform.pathSeparator).last;
+      _bookTitle = fileName.replaceAll(RegExp(r"\.[^.]+$"), "");
+    }
+  }
+
+  Future<void> _loadTxtEngine() async {
+    final file = File(filePath);
+    final text = await file.readAsString();
+    _epubRawPages.clear();
+    _epubRawPages.addAll(_paginateText(text, _currentFontSize));
+    _totalPages = _epubRawPages.length;
+    _cacheEpubPages();
+  }
+
+  ReconstructedPage getPage(int pageIndex) {
+    if (pageIndex < 0 || pageIndex >= _totalPages) {
+      return ReconstructedPage(
+        pageIndex: pageIndex,
+        status: PageStatus.failed,
+        errorMessage: "Page $pageIndex out of range",
+      );
+    }
+
+    if (_pageCache.containsKey(pageIndex)) {
+      return _pageCache[pageIndex]!;
+    }
+
+    if (format.toLowerCase() == "pdf") {
+      _pageCache[pageIndex] = ReconstructedPage(
+        pageIndex: pageIndex,
+        status: PageStatus.loading,
+      );
+      _renderPdfPage(pageIndex);
+      return _pageCache[pageIndex]!;
+    }
+
     return ReconstructedPage(
-      index: index,
-      status: PageStatus.ready,
-      textContent: "End of document.",
-      isImage: false,
+      pageIndex: pageIndex,
+      status: PageStatus.failed,
+      errorMessage: "Content missing",
     );
   }
 
-  void retryPage(int index) {
-    _cache.remove(index);
-    _activeLoading.remove(index);
-    _schedulePageLoad(index, highPriority: true);
-  }
+  Future<void> _renderPdfPage(int pageIndex) async {
+    if (_pdfDocument == null) {
+      return;
+    }
+    try {
+      final page = await _pdfDocument!.getPage(pageIndex + 1);
+      final pageImage = await page.render(
+        width: page.width * 2,
+        height: page.height * 2,
+        format: PdfPageImageFormat.jpeg,
+      );
+      await page.close();
 
-  void _recordAccess(int index) {
-    _lruOrder.remove(index);
-    _lruOrder.add(index);
-  }
-
-  /// Evict pages furthest from current reading index when exceeding maxCacheSize
-  void _enforceCacheBounds() {
-    if (_cache.length <= maxCacheSize) return;
-
-    final candidates =
-        _cache.keys.where((k) => (k - _currentReadingIndex).abs() > 3).toList();
-    candidates.sort((a, b) => (b - _currentReadingIndex)
-        .abs()
-        .compareTo((a - _currentReadingIndex).abs()));
-
-    for (final evictIndex in candidates) {
-      if (_cache.length <= maxCacheSize) break;
-      _cache.remove(evictIndex);
-      _lruOrder.remove(evictIndex);
+      if (pageImage != null) {
+        _pageCache[pageIndex] = ReconstructedPage(
+          pageIndex: pageIndex,
+          status: PageStatus.ready,
+          isImage: true,
+          imageBytes: pageImage.bytes,
+        );
+        _pruneCache(pageIndex);
+        notifyListeners();
+      }
+    } catch (e) {
+      _pageCache[pageIndex] = ReconstructedPage(
+        pageIndex: pageIndex,
+        status: PageStatus.failed,
+        errorMessage: "Failed to render PDF: $e",
+      );
+      notifyListeners();
     }
   }
 
-  static String _stripHtml(String html) {
-    return html
-        .replaceAll(
-            RegExp(r'<style[^>]*>[\s\S]*?</style>', caseSensitive: false), '')
-        .replaceAll(
-            RegExp(r'<script[^>]*>[\s\S]*?</script>', caseSensitive: false), '')
-        .replaceAll(
-            RegExp(r'</(p|div|h[1-6]|li|tr)>', caseSensitive: false), '\n\n')
-        .replaceAll(RegExp(r'<(br|hr)[^>]*>', caseSensitive: false), '\n')
-        .replaceAll(RegExp(r'<[^>]*>'), ' ')
-        .replaceAll('&nbsp;', ' ')
-        .replaceAll('&amp;', '&')
-        .replaceAll('&quot;', '"')
-        .replaceAll('&apos;', "'")
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll(RegExp(r'[ \t]+'), ' ')
-        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
-        .trim();
+  void _pruneCache(int currentPage) {
+    if (_pageCache.length <= maxCacheSize) {
+      return;
+    }
+    int furthest = -1;
+    int maxDist = -1;
+    for (final key in _pageCache.keys) {
+      final dist = (key - currentPage).abs();
+      if (dist > maxDist) {
+        maxDist = dist;
+        furthest = key;
+      }
+    }
+    if (furthest != -1) {
+      _pageCache.remove(furthest);
+    }
   }
 
-  static void _chunkText(String text, List<String> targetList) {
-    const targetLength = 650;
-    int start = 0;
-    while (start < text.length) {
-      if (start + targetLength >= text.length) {
-        final remaining = text.substring(start).trim();
-        if (remaining.isNotEmpty) targetList.add(remaining);
-        break;
+  void prefetch(int pageIndex) {
+    if (format.toLowerCase() == "pdf") {
+      if (pageIndex + 1 < _totalPages &&
+          !_pageCache.containsKey(pageIndex + 1)) {
+        _renderPdfPage(pageIndex + 1);
       }
-      int end = start + targetLength;
-      int breakIndex = text.lastIndexOf('\n\n', end);
-      if (breakIndex <= start + 250) {
-        breakIndex = text.lastIndexOf(RegExp(r'[.!?]\s'), end);
+      if (pageIndex - 1 >= 0 && !_pageCache.containsKey(pageIndex - 1)) {
+        _renderPdfPage(pageIndex - 1);
       }
-      if (breakIndex <= start + 200) {
-        breakIndex = text.lastIndexOf(' ', end);
-      }
-      if (breakIndex <= start) {
-        breakIndex = end;
-      }
-      final chunk = text.substring(start, breakIndex).trim();
-      if (chunk.isNotEmpty) targetList.add(chunk);
-      start = breakIndex + 1;
     }
+  }
+
+  void rePaginateOnFontSizeChange(
+      {required double fontSize, required double lineHeight}) {
+    if (format.toLowerCase() == "pdf") {
+      return;
+    }
+    _currentFontSize = fontSize;
+    initialize();
   }
 
   @override
   void dispose() {
-    _isDisposed = true;
-    _pdfDoc?.close();
-    _cache.clear();
-    _lruOrder.clear();
-    _activeLoading.clear();
+    _pdfDocument?.close();
     super.dispose();
   }
 }
