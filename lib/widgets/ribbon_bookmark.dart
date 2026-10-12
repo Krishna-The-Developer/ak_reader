@@ -29,19 +29,27 @@ class RibbonBookmarkWidget extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    const double baseRibbonWidth = 15.0;
-    const double extraTailLength = 36.0;
+    const double baseRibbonWidth = 17.0;
+    const double extraTailLength = 46.0; // Hangs onto the wood desk
     final double fullLength = bookHeight + extraTailLength;
     final double currentLength = fullLength * drapeProgress.clamp(0.0, 1.0);
 
     double currentLeft = leftOffset;
     double currentWidth = baseRibbonWidth;
+    double flexShiftX = 0.0;
+    double flexShiftY = 0.0;
+    double flexAngle = 0.0;
     double opacity = 1.0;
 
     if (isCurling && curlProgress > 0.005) {
       final double p = curlProgress.clamp(0.0, 1.0);
+      final double flutter = math.sin(p * math.pi * 2.2);
+      flexShiftX = -flutter * 8.0 - (p * 14.0);
+      flexShiftY = -math.sin(p * math.pi) * 16.0;
+      flexAngle = -math.sin(p * math.pi) * 0.12;
+
       currentLeft = leftOffset * (1.0 - (p * 1.15)).clamp(0.0, 1.0);
-      currentWidth = baseRibbonWidth * (1.0 - (p * 1.25)).clamp(0.0, 1.0);
+      currentWidth = baseRibbonWidth * (1.0 - (p * 1.2)).clamp(0.0, 1.0);
       opacity = (1.0 - (p * 1.35)).clamp(0.0, 1.0);
     }
 
@@ -50,62 +58,67 @@ class RibbonBookmarkWidget extends StatelessWidget {
     }
 
     return Positioned(
-      left: currentLeft,
-      top: -6.0,
+      left: currentLeft + flexShiftX,
+      top: -8.0 + flexShiftY,
       child: Opacity(
         opacity: opacity,
-        child: SizedBox(
-          width: baseRibbonWidth + 140.0,
-          height: currentLength + 8.0,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              CustomPaint(
-                size: Size(currentWidth, currentLength),
-                painter: _WovenFabricRibbonPainter(
-                  ribbonColor: ribbonColor,
-                  extraTail: extraTailLength,
-                  drapeProgress: drapeProgress,
+        child: Transform.rotate(
+          angle: flexAngle,
+          alignment: Alignment.topCenter,
+          child: SizedBox(
+            width: baseRibbonWidth + 140.0,
+            height: currentLength + 12.0,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                CustomPaint(
+                  size: Size(currentWidth, currentLength),
+                  painter: _RealFabricClothRibbonPainter(
+                    ribbonColor: ribbonColor,
+                    extraTail: extraTailLength,
+                    drapeProgress: drapeProgress,
+                    curlProgress: curlProgress,
+                  ),
                 ),
-              ),
-              if (noteText != null &&
-                  noteText!.isNotEmpty &&
-                  drapeProgress > 0.7 &&
-                  !isCurling)
-                Positioned(
-                  left: currentWidth + 6.0,
-                  top: bookHeight * 0.28,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8.0, vertical: 4.0),
-                    constraints: const BoxConstraints(maxWidth: 130),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFAF0D7),
-                      borderRadius: BorderRadius.circular(4.0),
-                      border: Border.all(
-                          color: const Color(0xFFC7A97B), width: 0.9),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Colors.black45,
-                          blurRadius: 4.0,
-                          offset: Offset(1.5, 2.0),
+                if (noteText != null &&
+                    noteText!.isNotEmpty &&
+                    drapeProgress > 0.7 &&
+                    !isCurling)
+                  Positioned(
+                    left: currentWidth + 6.0,
+                    top: bookHeight * 0.28,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8.0, vertical: 4.0),
+                      constraints: const BoxConstraints(maxWidth: 130),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFAF0D7),
+                        borderRadius: BorderRadius.circular(4.0),
+                        border: Border.all(
+                            color: const Color(0xFFC7A97B), width: 0.9),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Colors.black45,
+                            blurRadius: 4.0,
+                            offset: Offset(1.5, 2.0),
+                          ),
+                        ],
+                      ),
+                      child: Text(
+                        noteText!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: "serif",
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF3E2723),
                         ),
-                      ],
-                    ),
-                    child: Text(
-                      noteText!,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontFamily: "serif",
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF3E2723),
                       ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -113,15 +126,17 @@ class RibbonBookmarkWidget extends StatelessWidget {
   }
 }
 
-class _WovenFabricRibbonPainter extends CustomPainter {
+class _RealFabricClothRibbonPainter extends CustomPainter {
   final Color ribbonColor;
   final double extraTail;
   final double drapeProgress;
+  final double curlProgress;
 
-  _WovenFabricRibbonPainter({
+  _RealFabricClothRibbonPainter({
     required this.ribbonColor,
     required this.extraTail,
     required this.drapeProgress,
+    required this.curlProgress,
   });
 
   @override
@@ -130,78 +145,96 @@ class _WovenFabricRibbonPainter extends CustomPainter {
     final double h = size.height;
     if (w <= 0.5 || h <= 2.0) return;
 
-    final double notch = math.min(10.0, h * 0.2);
+    final double notch = math.min(12.0, h * 0.2);
+    final double drapeCurve = 2.4 * math.sin(h * 0.012);
 
     final hsl = HSLColor.fromColor(ribbonColor);
-    final Color deepShade =
-        hsl.withLightness((hsl.lightness * 0.65).clamp(0.0, 1.0)).toColor();
-    final Color sheenShade =
-        hsl.withLightness((hsl.lightness * 1.32).clamp(0.0, 1.0)).toColor();
+    final Color deepFabric =
+        hsl.withLightness((hsl.lightness * 0.62).clamp(0.0, 1.0)).toColor();
+    final Color highlightFabric =
+        hsl.withLightness((hsl.lightness * 1.38).clamp(0.0, 1.0)).toColor();
 
-    final Path ribbonPath = Path();
-    ribbonPath.moveTo(0, 0);
-    ribbonPath.lineTo(0, h);
+    final Path clothPath = Path();
+    clothPath.moveTo(0, 0);
+    clothPath.cubicTo(
+      -1.2,
+      h * 0.25,
+      1.8,
+      h * 0.68,
+      drapeCurve,
+      h - notch,
+    );
+    clothPath.lineTo(drapeCurve, h);
     if (drapeProgress >= 0.88) {
-      ribbonPath.lineTo(w / 2, h - notch);
+      clothPath.lineTo(drapeCurve + w / 2, h - notch);
     }
-    ribbonPath.lineTo(w, h);
-    ribbonPath.lineTo(w, 0);
-    ribbonPath.close();
+    clothPath.lineTo(drapeCurve + w, h);
+    clothPath.cubicTo(
+      drapeCurve + w - 1.2,
+      h * 0.68,
+      w + 1.8,
+      h * 0.25,
+      w,
+      0,
+    );
+    clothPath.close();
 
     final shadowPaint = Paint()
-      ..color = Colors.black.withAlpha(85)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3.5);
+      ..color = Colors.black.withAlpha(90)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4.0);
     canvas.save();
-    canvas.translate(1.5, 2.0);
-    canvas.drawPath(ribbonPath, shadowPaint);
+    canvas.translate(2.2, 3.0);
+    canvas.drawPath(clothPath, shadowPaint);
     canvas.restore();
 
-    final Paint bodyPaint = Paint()..style = PaintingStyle.fill;
-    final Rect bounds = Rect.fromLTWH(0, 0, w, h);
-    bodyPaint.shader = LinearGradient(
+    final Paint fabricPaint = Paint()..style = PaintingStyle.fill;
+    final Rect bounds = Rect.fromLTWH(0, 0, w + 4, h);
+    fabricPaint.shader = LinearGradient(
       begin: Alignment.centerLeft,
       end: Alignment.centerRight,
       colors: [
-        deepShade,
+        deepFabric,
         ribbonColor,
-        sheenShade,
+        highlightFabric,
         ribbonColor,
-        deepShade,
+        deepFabric,
       ],
-      stops: const [0.0, 0.22, 0.50, 0.78, 1.0],
+      stops: const [0.0, 0.24, 0.50, 0.76, 1.0],
     ).createShader(bounds);
 
-    canvas.drawPath(ribbonPath, bodyPaint);
+    canvas.drawPath(clothPath, fabricPaint);
 
     if (w > 6.0) {
-      final threadPaint = Paint()
-        ..color = Colors.black.withAlpha(20)
+      final threadWeft = Paint()
+        ..color = Colors.black.withAlpha(22)
         ..strokeWidth = 0.5;
-      for (double y = 4.0; y < h - notch; y += 3.2) {
-        canvas.drawLine(Offset(1.0, y), Offset(w - 1.0, y + 0.6), threadPaint);
+      for (double y = 4.0; y < h - notch; y += 3.0) {
+        canvas.drawLine(Offset(0.8, y), Offset(w - 0.8, y + 0.6), threadWeft);
       }
 
-      final warpPaint = Paint()
-        ..color = Colors.white.withAlpha(16)
+      final threadWarp = Paint()
+        ..color = Colors.white.withAlpha(18)
         ..strokeWidth = 0.5;
-      for (double x = 2.0; x < w - 2.0; x += 2.6) {
-        canvas.drawLine(Offset(x, 0), Offset(x, h - notch), warpPaint);
+      for (double x = 2.0; x < w - 2.0; x += 2.4) {
+        canvas.drawLine(
+            Offset(x, 0), Offset(x + drapeCurve, h - notch), threadWarp);
       }
 
       final stitchPaint = Paint()
-        ..color = const Color(0xFFD4AF37).withAlpha(160)
-        ..strokeWidth = 0.7
+        ..color = const Color(0xFFD4AF37).withAlpha(175)
+        ..strokeWidth = 0.8
         ..style = PaintingStyle.stroke;
-      canvas.drawLine(
-          const Offset(1.0, 0), Offset(1.0, h - notch), stitchPaint);
-      canvas.drawLine(
-          Offset(w - 1.0, 0), Offset(w - 1.0, h - notch), stitchPaint);
+      canvas.drawLine(const Offset(1.0, 0), Offset(drapeCurve + 1.0, h - notch),
+          stitchPaint);
+      canvas.drawLine(Offset(w - 1.0, 0),
+          Offset(drapeCurve + w - 1.0, h - notch), stitchPaint);
     }
   }
 
   @override
-  bool shouldRepaint(_WovenFabricRibbonPainter old) =>
+  bool shouldRepaint(_RealFabricClothRibbonPainter old) =>
       old.ribbonColor != ribbonColor ||
       old.extraTail != extraTail ||
-      old.drapeProgress != drapeProgress;
+      old.drapeProgress != drapeProgress ||
+      old.curlProgress != curlProgress;
 }

@@ -832,7 +832,7 @@ class _ReaderScreenState extends State<ReaderScreen>
                     ),
                     child: Stack(
                       fit: StackFit.expand,
-                      clipBehavior: Clip.none,
+                      clipBehavior: Clip.hardEdge,
                       children: [
                         _buildReaderContent(
                             total, bookHeight, isBookmarked, currentNote),
@@ -874,63 +874,87 @@ class _ReaderScreenState extends State<ReaderScreen>
         final double drapeProg = _bookmarkDrapeAnimation.value;
 
         if (_currentMode == ReadingMode.vertical) {
-          return Stack(
-            fit: StackFit.expand,
-            clipBehavior: Clip.none,
-            children: [
-              ListView.builder(
-                controller: _verticalController,
-                physics: _activeTool != ActiveTool.none
-                    ? const NeverScrollableScrollPhysics()
-                    : const AlwaysScrollableScrollPhysics(),
-                itemCount: total,
-                itemBuilder: (ctx, idx) => Container(
-                  height: bookHeight,
-                  margin: const EdgeInsets.only(bottom: 16.0),
-                  decoration: BoxDecoration(
-                    color: _pageBgColor.withAlpha(255),
-                    borderRadius: BorderRadius.circular(3),
-                    boxShadow: const [
-                      BoxShadow(
-                          color: Colors.black26,
-                          blurRadius: 4,
-                          offset: Offset(0, 2)),
-                    ],
+          return NotificationListener<ScrollNotification>(
+            onNotification: (notification) {
+              if (notification is OverscrollNotification &&
+                  _verticalController.hasClients &&
+                  _verticalController.offset <= 0 &&
+                  notification.overscroll < -10) {
+                _closeHardCover();
+                return true;
+              }
+              return false;
+            },
+            child: Stack(
+              fit: StackFit.expand,
+              clipBehavior: Clip.hardEdge,
+              children: [
+                ListView.builder(
+                  controller: _verticalController,
+                  physics: _activeTool != ActiveTool.none
+                      ? const NeverScrollableScrollPhysics()
+                      : const AlwaysScrollableScrollPhysics(),
+                  itemCount: total,
+                  itemBuilder: (ctx, idx) => Container(
+                    height: bookHeight,
+                    margin: const EdgeInsets.only(bottom: 16.0),
+                    decoration: BoxDecoration(
+                      color: _pageBgColor.withAlpha(255),
+                      borderRadius: BorderRadius.circular(3),
+                      boxShadow: const [
+                        BoxShadow(
+                            color: Colors.black26,
+                            blurRadius: 4,
+                            offset: Offset(0, 2)),
+                      ],
+                    ),
+                    child: _buildPageContent(idx, total),
                   ),
-                  child: _buildPageContent(idx, total),
                 ),
-              ),
-              RibbonBookmarkWidget(
-                ribbonColor: _ribbonColor,
-                bookHeight: bookHeight,
-                leftOffset: 16.0,
-                isCurrentPageBookmarked: isBookmarked,
-                noteText: currentNote,
-                drapeProgress: drapeProg,
-              ),
-            ],
+                RibbonBookmarkWidget(
+                  ribbonColor: _ribbonColor,
+                  bookHeight: bookHeight,
+                  leftOffset: 16.0,
+                  isCurrentPageBookmarked: isBookmarked,
+                  noteText: currentNote,
+                  drapeProgress: drapeProg,
+                ),
+              ],
+            ),
           );
         } else if (_currentMode == ReadingMode.horizontal) {
-          return Stack(
-            fit: StackFit.expand,
-            clipBehavior: Clip.none,
-            children: [
-              PageView.builder(
-                controller: _horizontalController,
-                physics: const PageScrollPhysics(),
-                itemCount: total,
-                onPageChanged: _saveProgress,
-                itemBuilder: (ctx, idx) => _buildPageContent(idx, total),
-              ),
-              RibbonBookmarkWidget(
-                ribbonColor: _ribbonColor,
-                bookHeight: bookHeight,
-                leftOffset: 16.0,
-                isCurrentPageBookmarked: isBookmarked,
-                noteText: currentNote,
-                drapeProgress: drapeProg,
-              ),
-            ],
+          return NotificationListener<ScrollNotification>(
+            onNotification: (notification) {
+              if (notification is OverscrollNotification &&
+                  _currentPage == 0 &&
+                  notification.overscroll < -10) {
+                _closeHardCover();
+                return true;
+              }
+              return false;
+            },
+            child: Stack(
+              fit: StackFit.expand,
+              clipBehavior: Clip.hardEdge,
+              children: [
+                PageView.builder(
+                  controller: _horizontalController,
+                  physics: const BouncingScrollPhysics(),
+                  allowImplicitScrolling: true,
+                  itemCount: total,
+                  onPageChanged: _saveProgress,
+                  itemBuilder: (ctx, idx) => _buildPageContent(idx, total),
+                ),
+                RibbonBookmarkWidget(
+                  ribbonColor: _ribbonColor,
+                  bookHeight: bookHeight,
+                  leftOffset: 16.0,
+                  isCurrentPageBookmarked: isBookmarked,
+                  noteText: currentNote,
+                  drapeProgress: drapeProg,
+                ),
+              ],
+            ),
           );
         } else {
           return RealisticPageCurl(

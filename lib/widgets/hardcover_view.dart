@@ -1,5 +1,6 @@
 import "dart:math" as math;
 import "package:flutter/material.dart";
+import "../services/sound_service.dart";
 
 class HardcoverView extends StatefulWidget {
   final bool isCoverOpen;
@@ -40,13 +41,14 @@ class _HardcoverViewState extends State<HardcoverView>
   late AnimationController _animController;
   late Animation<double> _animation;
   double _dragProgress = 0.0;
+  bool _isDragging = false;
 
   @override
   void initState() {
     super.initState();
     _animController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 520),
+      duration: const Duration(milliseconds: 650),
     );
 
     _animation = CurvedAnimation(
@@ -56,27 +58,19 @@ class _HardcoverViewState extends State<HardcoverView>
 
     if (widget.isCoverOpen) {
       _animController.value = 1.0;
-      _dragProgress = 0.0;
     }
-
-    _animController.addStatusListener((status) {
-      if (status == AnimationStatus.completed ||
-          status == AnimationStatus.dismissed) {
-        setState(() {});
-      }
-    });
   }
 
   @override
-  void didUpdateWidget(HardcoverView old) {
-    super.didUpdateWidget(old);
-    if (widget.isCoverOpen && !old.isCoverOpen) {
-      if (_animController.value < 1.0) {
-        _animController.forward();
+  void didUpdateWidget(HardcoverView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isCoverOpen && !oldWidget.isCoverOpen) {
+      if (_animController.value < 1.0 && !_animController.isAnimating) {
+        _animController.forward(from: _dragProgress);
       }
-    } else if (!widget.isCoverOpen && old.isCoverOpen) {
-      if (_animController.value > 0.0) {
-        _animController.reverse();
+    } else if (!widget.isCoverOpen && oldWidget.isCoverOpen) {
+      if (_animController.value > 0.0 && !_animController.isAnimating) {
+        _animController.reverse(from: _animController.value);
       }
     }
   }
@@ -85,6 +79,14 @@ class _HardcoverViewState extends State<HardcoverView>
   void dispose() {
     _animController.dispose();
     super.dispose();
+  }
+
+  void _triggerOpen() {
+    if (_animController.isAnimating || widget.isCoverOpen) return;
+    SoundService.playBookOpenThud();
+    _animController.forward(from: 0.0).then((_) {
+      widget.onOpen();
+    });
   }
 
   Widget _buildBrassCorner({
@@ -102,8 +104,8 @@ class _HardcoverViewState extends State<HardcoverView>
       child: RotatedBox(
         quarterTurns: quarterTurns,
         child: Container(
-          width: 16,
-          height: 16,
+          width: 18,
+          height: 18,
           decoration: const BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
@@ -123,85 +125,7 @@ class _HardcoverViewState extends State<HardcoverView>
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    // ROOT CAUSE FIX: If book is open, unmount the swinging cover entirely.
-    // Absolutely no endpaper or transform can ever leak onto the desk.
-    if (widget.isCoverOpen &&
-        !_animController.isAnimating &&
-        _dragProgress == 0.0) {
-      return _buildOpenBookCasing();
-    }
-    if (_animController.value >= 0.96) {
-      return _buildOpenBookCasing();
-    }
-
-    return AnimatedBuilder(
-      animation: _animation,
-      builder: (context, child) {
-        final double progress = _animController.isAnimating
-            ? _animation.value
-            : (widget.isCoverOpen ? 1.0 : _dragProgress);
-
-        if (progress >= 0.96) {
-          return _buildOpenBookCasing();
-        }
-
-        final double angle = -progress * math.pi;
-        final double forwardScale = 1.0 + 0.04 * math.sin(progress * math.pi);
-
-        return Stack(
-          alignment: Alignment.center,
-          clipBehavior: Clip.none,
-          children: [
-            if (progress > 0.04) _buildOpenBookCasing(),
-
-            // Strict ClipRect so no 3D polygon can ever bleed outside book boundaries
-            ClipRect(
-              child: Transform(
-                alignment: Alignment.centerLeft,
-                transform: Matrix4.identity()
-                  ..setEntry(3, 2, 0.0005)
-                  ..rotateY(angle),
-                child: Transform.scale(
-                  scale: forwardScale,
-                  alignment: Alignment.centerLeft,
-                  child: progress < 0.5
-                      ? GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onHorizontalDragUpdate: (details) {
-                            setState(() {
-                              _dragProgress = (_dragProgress -
-                                      (details.primaryDelta ?? 0) /
-                                          widget.casingWidth)
-                                  .clamp(0.0, 1.0);
-                            });
-                          },
-                          onHorizontalDragEnd: (details) {
-                            final velocity = details.primaryVelocity ?? 0.0;
-                            if (_dragProgress > 0.25 || velocity < -250) {
-                              widget.onOpen();
-                            } else {
-                              setState(() => _dragProgress = 0.0);
-                            }
-                          },
-                          child: _buildClosedHardcoverBoard(),
-                        )
-                      : Transform(
-                          alignment: Alignment.center,
-                          transform: Matrix4.identity()..rotateY(math.pi),
-                          child: _buildInsideCoverEndpaper(),
-                        ),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildClosedHardcoverBoard() {
+  Widget _buildFrontCoverBoard() {
     return Container(
       width: widget.casingWidth,
       height: widget.casingHeight,
@@ -211,21 +135,21 @@ class _HardcoverViewState extends State<HardcoverView>
           end: Alignment.bottomRight,
           colors: [
             Color(0xFF381A0B),
-            Color(0xFF220E05),
+            Color(0xFF241006),
             Color(0xFF140602),
           ],
         ),
-        borderRadius: BorderRadius.circular(9),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: const Color(0xFF5A2A12),
-          width: 2.4,
+          width: 2.2,
         ),
         boxShadow: const [
           BoxShadow(
-            color: Color(0xEE000000),
-            blurRadius: 28,
-            spreadRadius: 3,
-            offset: Offset(0, 12),
+            color: Color(0xDD000000),
+            blurRadius: 24,
+            spreadRadius: 2,
+            offset: Offset(4, 12),
           ),
         ],
       ),
@@ -233,7 +157,7 @@ class _HardcoverViewState extends State<HardcoverView>
         children: [
           Positioned.fill(
             child: Container(
-              margin: const EdgeInsets.all(5.0),
+              margin: const EdgeInsets.all(7.0),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(6),
                 border: Border.all(
@@ -251,7 +175,7 @@ class _HardcoverViewState extends State<HardcoverView>
             left: 0,
             top: 0,
             bottom: 0,
-            width: 20,
+            width: 18,
             child: Container(
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
@@ -264,21 +188,24 @@ class _HardcoverViewState extends State<HardcoverView>
                   ],
                 ),
                 borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(8),
-                  bottomLeft: Radius.circular(8),
+                  topLeft: Radius.circular(7),
+                  bottomLeft: Radius.circular(7),
                 ),
               ),
             ),
           ),
           Center(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.auto_stories,
-                      color: Color(0xFFFFD59E), size: 44),
-                  const SizedBox(height: 14),
+                  const Icon(
+                    Icons.auto_stories,
+                    color: Color(0xFFFFD59E),
+                    size: 46,
+                  ),
+                  const SizedBox(height: 16),
                   Text(
                     widget.title,
                     textAlign: TextAlign.center,
@@ -287,13 +214,14 @@ class _HardcoverViewState extends State<HardcoverView>
                     style: const TextStyle(
                       color: Color(0xFFFFD59E),
                       fontFamily: "serif",
-                      fontSize: 19,
+                      fontSize: 18,
                       fontWeight: FontWeight.bold,
                       shadows: [
                         Shadow(
-                            color: Colors.black,
-                            blurRadius: 4,
-                            offset: Offset(1, 2)),
+                          color: Colors.black,
+                          blurRadius: 4,
+                          offset: Offset(1, 2),
+                        ),
                       ],
                     ),
                   ),
@@ -310,23 +238,37 @@ class _HardcoverViewState extends State<HardcoverView>
                       fontStyle: FontStyle.italic,
                     ),
                   ),
-                  const SizedBox(height: 26),
-                  const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.swipe_left,
-                          color: Color(0x99FFD59E), size: 16),
-                      SizedBox(width: 6),
-                      Text(
-                        "Swipe to Open",
-                        style: TextStyle(
-                          color: Color(0x99FFD59E),
-                          fontFamily: "serif",
-                          fontSize: 11.5,
-                          letterSpacing: 0.8,
-                        ),
+                  const SizedBox(height: 22),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: const Color(0x88FFD59E),
+                        width: 1.1,
                       ),
-                    ],
+                      color: const Color(0x33000000),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.touch_app,
+                          color: Color(0xFFFFD59E),
+                          size: 15,
+                        ),
+                        SizedBox(width: 6),
+                        Text(
+                          "Tap to Open Book",
+                          style: TextStyle(
+                            color: Color(0xFFFFD59E),
+                            fontFamily: "serif",
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -337,22 +279,28 @@ class _HardcoverViewState extends State<HardcoverView>
     );
   }
 
-  Widget _buildInsideCoverEndpaper() {
+  Widget _buildInsideEndpaper() {
     return Container(
       width: widget.casingWidth,
       height: widget.casingHeight,
       decoration: BoxDecoration(
-        color: const Color(0xFF261208),
-        borderRadius: BorderRadius.circular(9),
-        border: Border.all(color: const Color(0xFF5A2A12), width: 2.0),
+        color: const Color(0xFF2A140A),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: const Color(0xFF5A2A12),
+          width: 2.0,
+        ),
       ),
       child: Center(
         child: Container(
-          margin: const EdgeInsets.all(12),
+          margin: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: const Color(0xFFF3E5AB),
+            color: const Color(0xFFF0E2BA),
             borderRadius: BorderRadius.circular(5),
-            border: Border.all(color: const Color(0x445A2A12), width: 1.5),
+            border: Border.all(
+              color: const Color(0x445A2A12),
+              width: 1.2,
+            ),
           ),
         ),
       ),
@@ -373,17 +321,17 @@ class _HardcoverViewState extends State<HardcoverView>
             Color(0xFF120602),
           ],
         ),
-        borderRadius: BorderRadius.circular(9),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: const Color(0xFF5A2A12),
           width: 2.0,
         ),
         boxShadow: const [
           BoxShadow(
-            color: Color(0xEE000000),
-            blurRadius: 28,
-            spreadRadius: 3,
-            offset: Offset(0, 12),
+            color: Color(0xDD000000),
+            blurRadius: 24,
+            spreadRadius: 2,
+            offset: Offset(4, 12),
           ),
         ],
       ),
@@ -418,9 +366,97 @@ class _HardcoverViewState extends State<HardcoverView>
             top: widget.coverOverhang,
             width: widget.bookWidth,
             height: widget.bookHeight,
-            child: widget.bookPagesContent,
+            child: ClipRRect(
+              borderRadius: const BorderRadius.only(
+                topRight: Radius.circular(4),
+                bottomRight: Radius.circular(4),
+              ),
+              clipBehavior: Clip.hardEdge,
+              child: widget.bookPagesContent,
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.isCoverOpen && !_animController.isAnimating && !_isDragging) {
+      return _buildOpenBookCasing();
+    }
+
+    return SizedBox(
+      width: widget.casingWidth,
+      height: widget.casingHeight,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _triggerOpen,
+        onHorizontalDragStart: (details) {
+          if (_animController.isAnimating || widget.isCoverOpen) return;
+          _isDragging = true;
+          _dragProgress = _animController.value;
+        },
+        onHorizontalDragUpdate: (details) {
+          if (!_isDragging || _animController.isAnimating || widget.isCoverOpen) return;
+          setState(() {
+            _dragProgress = (_dragProgress -
+                    (details.primaryDelta ?? 0) / widget.casingWidth)
+                .clamp(0.0, 1.0);
+          });
+        },
+        onHorizontalDragEnd: (details) {
+          if (!_isDragging || _animController.isAnimating || widget.isCoverOpen) return;
+          _isDragging = false;
+          final velocity = details.primaryVelocity ?? 0.0;
+          if (_dragProgress > 0.18 || velocity < -180) {
+            SoundService.playBookOpenThud();
+            _animController.forward(from: _dragProgress).then((_) {
+              widget.onOpen();
+            });
+          } else {
+            _animController.reverse(from: _dragProgress);
+          }
+        },
+        child: AnimatedBuilder(
+          animation: _animation,
+          builder: (context, child) {
+            final double progress = _isDragging ? _dragProgress : _animation.value;
+
+            if (progress >= 0.99) {
+              return _buildOpenBookCasing();
+            }
+
+            // OUTWARD 3D SWING: Negative perspective pushes front towards viewer
+            final double angle = -progress * math.pi;
+
+            return Stack(
+              clipBehavior: Clip.none,
+              children: [
+                _buildOpenBookCasing(),
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  width: widget.casingWidth,
+                  height: widget.casingHeight,
+                  child: Transform(
+                    alignment: Alignment.centerLeft,
+                    transform: Matrix4.identity()
+                      ..setEntry(3, 2, -0.0014)
+                      ..rotateY(angle),
+                    child: progress < 0.50
+                        ? _buildFrontCoverBoard()
+                        : Transform(
+                            alignment: Alignment.center,
+                            transform: Matrix4.identity()..rotateY(math.pi),
+                            child: _buildInsideEndpaper(),
+                          ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }

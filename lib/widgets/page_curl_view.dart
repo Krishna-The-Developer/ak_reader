@@ -176,22 +176,25 @@ class _RealisticPageCurlState extends State<RealisticPageCurl>
         final w = constraints.maxWidth;
         final h = constraints.maxHeight;
 
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onHorizontalDragStart: (d) => _onHorizontalDragStart(d, h),
-          onHorizontalDragUpdate: (d) => _onHorizontalDragUpdate(d, w),
-          onHorizontalDragEnd: _onHorizontalDragEnd,
-          child: Container(
-            color: solidPaper,
-            child: Stack(
-              fit: StackFit.expand,
-              clipBehavior: Clip.none,
-              children: [
-                _buildBasePage(w, h, solidPaper),
-                if (_curlProgress > 0.001) _buildCurlingPage(w, h, solidPaper),
-                if (widget.bookmarkBuilder != null)
-                  widget.bookmarkBuilder!(_curlProgress, _curlProgress > 0.001),
-              ],
+        return ClipRect(
+          clipBehavior: Clip.hardEdge,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onHorizontalDragStart: (d) => _onHorizontalDragStart(d, h),
+            onHorizontalDragUpdate: (d) => _onHorizontalDragUpdate(d, w),
+            onHorizontalDragEnd: _onHorizontalDragEnd,
+            child: Container(
+              color: solidPaper,
+              child: Stack(
+                fit: StackFit.expand,
+                clipBehavior: Clip.hardEdge,
+                children: [
+                  _buildBasePage(w, h, solidPaper),
+                  if (_curlProgress > 0.001) _buildCurlingPage(w, h, solidPaper),
+                  if (widget.bookmarkBuilder != null)
+                    widget.bookmarkBuilder!(_curlProgress, _curlProgress > 0.001),
+                ],
+              ),
             ),
           ),
         );
