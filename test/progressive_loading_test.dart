@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:moon_reader_flutter/services/progressive_document_controller.dart';
+import 'package:ak_reader/services/progressive_document_controller.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

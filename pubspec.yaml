@@ -1,5 +1,5 @@
-name: moon_reader_flutter
-description: "A modern book reading application built with Flutter."
+name: ak_reader
+description: AK Reader - Modern 3D Flip E-Reader Application.
 publish_to: 'none'
 
 version: 1.0.0+1

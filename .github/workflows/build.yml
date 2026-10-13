@@ -1,4 +1,4 @@
-name: Moon Reader CI/CD
+name: AK Reader CI/CD
 
 on:
   push:
@@ -76,7 +76,7 @@ jobs:
       - name: Upload Production Artifacts
         uses: actions/upload-artifact@v4 # nosemgrep
         with:
-          name: MoonReader-Production-Artifacts
+          name: AKReader-Production-Artifacts
           path: |
             build/app/outputs/flutter-apk/app-release.apk
             build/app/outputs/bundle/release/app-release.aab
@@ -90,7 +90,7 @@ jobs:
     steps:
       - name: Render Executive Step Summary
         run: |
-          echo "# 📖 Moon Reader Flutter — Build Report" >> $GITHUB_STEP_SUMMARY
+          echo "# 📖 AK Reader Flutter — Build Report" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🚀 Pipeline Execution Status" >> $GITHUB_STEP_SUMMARY
           echo "| Check / Target | Status | Engine / Details |" >> $GITHUB_STEP_SUMMARY

@@ -1,4 +1,4 @@
-# Moon Reader
+# AK Reader
 
 A tactile wooden desk PDF reader built with Flutter.
 
