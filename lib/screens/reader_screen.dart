@@ -353,8 +353,9 @@ class _ReaderScreenState extends State<ReaderScreen>
   }
 
   void _onDrawingPanEnd(DragEndDetails details) {
-    if (_activeTool == ActiveTool.none || _activeTool == ActiveTool.eraser)
+    if (_activeTool == ActiveTool.none || _activeTool == ActiveTool.eraser) {
       return;
+      }
     if (_activePoints.length < 2) return;
 
     double minX = _activePoints.first.dx;

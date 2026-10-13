@@ -350,7 +350,7 @@ class WoodenDeskFrame extends StatelessWidget {
                   radius: 1.25,
                   colors: [
                     Colors.transparent,
-                    Colors.black.withOpacity(0.55),
+                    Colors.black.withValues(alpha: 0.55),
                   ],
                 ),
               ),
