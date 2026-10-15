@@ -20,7 +20,8 @@ android {
 
     defaultConfig {
         applicationId = "com.local.moonreader.moon_reader_flutter"
-        minSdk = 24
+        minSdk = 21
+        multiDexEnabled = true
         targetSdk = 34
         versionCode = flutter.versionCode
         versionName = flutter.versionName
