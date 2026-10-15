@@ -1,5 +1,6 @@
 import "dart:math" as math;
 import "package:flutter/material.dart";
+import "color_wheel_picker.dart";
 
 class RibbonBookmarkWidget extends StatelessWidget {
   final Color ribbonColor;
@@ -29,8 +30,11 @@ class RibbonBookmarkWidget extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
+    // Exact 180 degree opposite color for embroidered text & borders
+    final Color oppositeTextColor = ColorWheelMath.getOppositeWheelColor(ribbonColor);
+
     const double baseRibbonWidth = 17.0;
-    const double extraTailLength = 46.0; // Hangs onto the wood desk
+    const double extraTailLength = 46.0;
     final double fullLength = bookHeight + extraTailLength;
     final double currentLength = fullLength * drapeProgress.clamp(0.0, 1.0);
 
@@ -75,11 +79,35 @@ class RibbonBookmarkWidget extends StatelessWidget {
                   size: Size(currentWidth, currentLength),
                   painter: _RealFabricClothRibbonPainter(
                     ribbonColor: ribbonColor,
+                    oppositeColor: oppositeTextColor,
                     extraTail: extraTailLength,
                     drapeProgress: drapeProgress,
                     curlProgress: curlProgress,
                   ),
                 ),
+                // Text embroidered vertically on ribbon in 180° opposite color
+                if (drapeProgress > 0.8 && !isCurling && currentWidth > 10.0)
+                  Positioned(
+                    top: 26.0,
+                    left: 0,
+                    width: currentWidth,
+                    child: Center(
+                      child: RotatedBox(
+                        quarterTurns: 1,
+                        child: Text(
+                          "AK READER",
+                          style: TextStyle(
+                            color: oppositeTextColor,
+                            fontSize: 7.0,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 2.0,
+                            fontFamily: "monospace",
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                // Attached bookmark note card with opposite color borders
                 if (noteText != null &&
                     noteText!.isNotEmpty &&
                     drapeProgress > 0.7 &&
@@ -88,14 +116,12 @@ class RibbonBookmarkWidget extends StatelessWidget {
                     left: currentWidth + 6.0,
                     top: bookHeight * 0.28,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8.0, vertical: 4.0),
+                      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
                       constraints: const BoxConstraints(maxWidth: 130),
                       decoration: BoxDecoration(
                         color: const Color(0xFFFAF0D7),
                         borderRadius: BorderRadius.circular(4.0),
-                        border: Border.all(
-                            color: const Color(0xFFC7A97B), width: 0.9),
+                        border: Border.all(color: oppositeTextColor.withAlpha(200), width: 1.0),
                         boxShadow: const [
                           BoxShadow(
                             color: Colors.black45,
@@ -128,12 +154,14 @@ class RibbonBookmarkWidget extends StatelessWidget {
 
 class _RealFabricClothRibbonPainter extends CustomPainter {
   final Color ribbonColor;
+  final Color oppositeColor;
   final double extraTail;
   final double drapeProgress;
   final double curlProgress;
 
   _RealFabricClothRibbonPainter({
     required this.ribbonColor,
+    required this.oppositeColor,
     required this.extraTail,
     required this.drapeProgress,
     required this.curlProgress,
@@ -220,20 +248,20 @@ class _RealFabricClothRibbonPainter extends CustomPainter {
             Offset(x, 0), Offset(x + drapeCurve, h - notch), threadWarp);
       }
 
+      // Edge stitches rendered in opposite color
       final stitchPaint = Paint()
-        ..color = const Color(0xFFD4AF37).withAlpha(175)
+        ..color = oppositeColor.withAlpha(190)
         ..strokeWidth = 0.8
         ..style = PaintingStyle.stroke;
-      canvas.drawLine(const Offset(1.0, 0), Offset(drapeCurve + 1.0, h - notch),
-          stitchPaint);
-      canvas.drawLine(Offset(w - 1.0, 0),
-          Offset(drapeCurve + w - 1.0, h - notch), stitchPaint);
+      canvas.drawLine(const Offset(1.0, 0), Offset(drapeCurve + 1.0, h - notch), stitchPaint);
+      canvas.drawLine(Offset(w - 1.0, 0), Offset(drapeCurve + w - 1.0, h - notch), stitchPaint);
     }
   }
 
   @override
   bool shouldRepaint(_RealFabricClothRibbonPainter old) =>
       old.ribbonColor != ribbonColor ||
+      old.oppositeColor != oppositeColor ||
       old.extraTail != extraTail ||
       old.drapeProgress != drapeProgress ||
       old.curlProgress != curlProgress;

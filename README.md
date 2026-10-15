@@ -15,7 +15,7 @@ A tactile wooden desk PDF reader built with Flutter.
 
 ```mermaid
 graph TD
-    A[🚀 Git Push / Tag v1.0.0] --> B[🛡️ Stage 1: Security & Quality Gate]
+    A[🚀 Git Push / Tag v1.0.1] --> B[🛡️ Stage 1: Security & Quality Gate]
     
     subgraph S1 [Audit & Analysis]
         B --> B1[Flutter Analyze: 0 Issues]
@@ -46,7 +46,7 @@ graph TD
 
 ```mermaid
 graph TD
-    A[🚀 Git Push / Tag v1.0.0] --> B[🛡️ Stage 1: Security & Quality Gate]
+    A[🚀 Git Push / Tag v1.0.1] --> B[🛡️ Stage 1: Security & Quality Gate]
     
     subgraph S1 [Audit & Analysis]
         B --> B1[Flutter Analyze: 0 Issues]
@@ -77,7 +77,7 @@ graph TD
 
 ```mermaid
 graph TD
-    A[🚀 Git Push / Tag v1.0.0] --> B[🛡️ Stage 1: Security & Quality Gate]
+    A[🚀 Git Push / Tag v1.0.1] --> B[🛡️ Stage 1: Security & Quality Gate]
     
     subgraph S1 [Audit & Analysis]
         B --> B1[Flutter Analyze: 0 Issues]
@@ -108,7 +108,7 @@ graph TD
 
 ```mermaid
 graph TD
-    A[🚀 Git Push / Tag v1.0.0] --> B[🛡️ Stage 1: Security & Quality Gate]
+    A[🚀 Git Push / Tag v1.0.1] --> B[🛡️ Stage 1: Security & Quality Gate]
     
     subgraph S1 [Audit & Analysis]
         B --> B1[Flutter Analyze: 0 Issues]

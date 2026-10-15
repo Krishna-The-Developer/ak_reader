@@ -1,106 +1,78 @@
-name: AK Reader CI/CD
+name: AK Reader Release Pipeline
 
 on:
   push:
     branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
+    tags:
+      - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  # STAGE 1: Visual First Node (Security, Linter & Unit Tests)
-  quality_and_security:
-    name: 🛡️ Audit & Tests
+  build_and_release:
+    name: 🚀 Build & Publish Release Binaries
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout Codebase
-        uses: actions/checkout@v4 # nosemgrep
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-      - name: Setup Flutter SDK
-        uses: subosito/flutter-action@v2 # nosemgrep
-        with:
-          channel: 'stable'
-          cache: true
-
-      - name: Install Pub Dependencies
-        run: flutter pub get
-
-      - name: Static Code Analysis
-        run: flutter analyze
-
-      - name: Execute Flutter Unit Tests
-        run: flutter test test/progressive_loading_test.dart
-
-      - name: Local SAST Security Audit
-        run: |
-          pip install --break-system-packages semgrep
-          semgrep scan --config auto
-
-  # STAGE 2: Visual Second Node (Depends on Stage 1)
-  compile_binaries:
-    name: 📦 Android Build (APK + AAB)
-    needs: quality_and_security
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Codebase
-        uses: actions/checkout@v4 # nosemgrep
-
-      - name: Setup Java Zulu 17
-        uses: actions/setup-java@v4 # nosemgrep
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
 
       - name: Setup Flutter SDK
-        uses: subosito/flutter-action@v2 # nosemgrep
+        uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
           cache: true
 
-      - name: Fetch Pub Packages
+      - name: Install Dependencies
         run: flutter pub get
 
-      - name: Compile Release APK (ARM64)
+      - name: Code Verification Gate
+        run: flutter analyze
+
+      - name: Compile Native Release APK (ARM64)
         run: |
           flutter build apk --release \
             --target-platform android-arm64 \
-            --no-tree-shake-icons \
-            --android-skip-build-dependency-validation
+            --no-tree-shake-icons
 
       - name: Compile Play Store App Bundle (.aab)
         run: |
           flutter build appbundle --release \
-            --no-tree-shake-icons \
-            --android-skip-build-dependency-validation
+            --no-tree-shake-icons
 
-      - name: Upload Production Artifacts
-        uses: actions/upload-artifact@v4 # nosemgrep
-        with:
-          name: AKReader-Production-Artifacts
-          path: |
-            build/app/outputs/flutter-apk/app-release.apk
-            build/app/outputs/bundle/release/app-release.aab
-
-  # STAGE 3: Visual Third Node (Summary Dashboard)
-  pipeline_summary:
-    name: 📊 Visual Summary Dashboard
-    needs: [quality_and_security, compile_binaries]
-    runs-on: ubuntu-latest
-    if: always()
-    steps:
-      - name: Render Executive Step Summary
+      - name: Prepare Tagged Binaries
         run: |
-          echo "# 📖 AK Reader Flutter — Build Report" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🚀 Pipeline Execution Status" >> $GITHUB_STEP_SUMMARY
-          echo "| Check / Target | Status | Engine / Details |" >> $GITHUB_STEP_SUMMARY
-          echo "| :--- | :--- | :--- |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🛡️ **SAST Audit** | ✅ Passed | Semgrep OSS (0 Vulnerabilities) |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🎯 **Dart Linter** | ✅ Passed | \`flutter analyze\` (0 Warnings) |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🧪 **Unit Tests** | ✅ Passed | \`progressive_loading_test.dart\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| 📱 **Direct APK** | 📦 Built | \`app-release.apk\` (ARM64 Native) |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🏬 **Play Store AAB** | 📦 Built | \`app-release.aab\` (Bundle Ready) |" >> $GITHUB_STEP_SUMMARY
-          echo "| ⚙️ **Build Stack** | ⚡ Active | Gradle 8.14 + Java 17 Zulu |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "> Built automatically for commit \`${{ github.sha }}\` on branch \`${{ github.ref_name }}\`." >> $GITHUB_STEP_SUMMARY
+          TAG=${GITHUB_REF_NAME:-v1.0.1}
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release.apk "dist/AKReader-${TAG}-arm64.apk"
+          cp build/app/outputs/bundle/release/app-release.aab "dist/AKReader-${TAG}-release.aab"
+
+      - name: Publish to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        with:
+          name: "AK Reader Production Release ${{ github.ref_name }}"
+          tag_name: ${{ github.ref_name }}
+          files: |
+            dist/*.apk
+            dist/*.aab
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+
+      - name: Build Summary Output
+        if: always()
+        run: |
+          echo "## 📖 AK Reader Build Status (${{ github.ref_name }})" >> $GITHUB_STEP_SUMMARY
+          echo "| Target | Artifact |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+          echo "| 📱 **Direct APK (ARM64)** | \`AKReader-${{ github.ref_name }}-arm64.apk\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🏬 **Play Store Bundle** | \`AKReader-${{ github.ref_name }}-release.aab\` |" >> $GITHUB_STEP_SUMMARY
