@@ -130,4 +130,18 @@ class SoundService {
         return _penPlayer;
     }
   }
+
+  // Backward-compatible aliases
+  static void playWoodTap() => triggerWoodKnock();
+  static void playBookOpenThud() => triggerLandingThump();
+  static void playPageTurn() => onPageTouchDown();
+  static void playToolGlide() {
+    onWritingTouchDown("pen");
+    Future.delayed(const Duration(milliseconds: 300), () => onWritingTouchUp());
+  }
+  static void playEraserRub() {
+    onWritingTouchDown("eraser");
+    Future.delayed(const Duration(milliseconds: 300), () => onWritingTouchUp());
+  }
+
 }
