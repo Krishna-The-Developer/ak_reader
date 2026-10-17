@@ -164,8 +164,7 @@ class _RealisticPageCurlState extends State<RealisticPageCurl>
     final Animation<double> anim = Tween<double>(begin: startVal, end: endVal).animate(smoothAnim);
 
     anim.addListener(() {
-      final double currentVal = anim.value;
-      // Angular velocity |dTheta/dt|
+            // Angular velocity |dTheta/dt|
       
 
       setState(() {
