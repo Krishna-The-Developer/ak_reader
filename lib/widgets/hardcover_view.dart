@@ -13,6 +13,7 @@ class HardcoverView extends StatefulWidget {
   final double bookWidth;
   final double bookHeight;
   final Widget bookPagesContent;
+  final Widget? bookmarkWidget;
   final VoidCallback onOpen;
   final VoidCallback onClose;
 
@@ -28,6 +29,7 @@ class HardcoverView extends StatefulWidget {
     required this.bookWidth,
     required this.bookHeight,
     required this.bookPagesContent,
+    this.bookmarkWidget,
     required this.onOpen,
     required this.onClose,
   });
@@ -366,13 +368,31 @@ class _HardcoverViewState extends State<HardcoverView>
             top: widget.coverOverhang,
             width: widget.bookWidth,
             height: widget.bookHeight,
-            child: ClipRRect(
-              borderRadius: const BorderRadius.only(
-                topRight: Radius.circular(4),
-                bottomRight: Radius.circular(4),
-              ),
-              clipBehavior: Clip.hardEdge,
-              child: widget.bookPagesContent,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                // 1. Pages strictly locked inside boundaries (ZERO desk bleed)
+                Positioned.fill(
+                  child: ClipRRect(
+                    borderRadius: const BorderRadius.only(
+                      topRight: Radius.circular(4),
+                      bottomRight: Radius.circular(4),
+                    ),
+                    clipBehavior: Clip.hardEdge,
+                    child: Container(
+                      color: const Color(0xFFF5EACB),
+                      child: (widget.isCoverOpen || _animController.value > 0.05 || _isDragging)
+                          ? widget.bookPagesContent
+                          : const SizedBox.shrink(),
+                    ),
+                  ),
+                ),
+                // 2. Bookmark Ribbon drawn at unclipped book casing level
+                if ((widget.isCoverOpen || _animController.value > 0.05) && widget.bookmarkWidget != null)
+                  Positioned.fill(
+                    child: widget.bookmarkWidget!,
+                  ),
+              ],
             ),
           ),
         ],

@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.local.moonreader.moon_reader_flutter"
+    namespace = "com.akreader.app"
     compileSdk = 36
     ndkVersion = "28.2.13676358"
 
@@ -19,10 +19,13 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.local.moonreader.moon_reader_flutter"
-        minSdk = 21
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
+        applicationId = "com.akreader.app"
+        minSdk = 24
         multiDexEnabled = true
-        targetSdk = 34
+        targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }

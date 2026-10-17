@@ -1,32 +1,40 @@
-import "dart:math" as math;
-import "package:flutter/material.dart";
+import 'dart:math' as math;
+import 'dart:ui' as ui;
+import 'package:flutter/material.dart';
+import '../services/sound_service.dart';
 
-enum CurlCorner {
-  topRight,
-  bottomRight,
-  center,
-}
+/* =====================================================================
+ * LEGACY METHOD (UNIDIRECTIONAL DRAG APPROXIMATION) - COMMENTED OUT
+ * =====================================================================
+ * void legacyPaint(Canvas canvas, Size size, bool isForward) {
+ *   // Simple symmetric clipping without sign-based curvature mirror
+ * }
+ * ===================================================================== */
+
+enum CurlDragMode { none, edgePull, cornerPull }
+
+typedef BookmarkCurlBuilder = Widget Function(double curlProgress, bool isCurling);
 
 class RealisticPageCurl extends StatefulWidget {
   final int pageCount;
   final int initialPage;
   final ValueChanged<int>? onPageChanged;
   final VoidCallback? onSwipeBeforeFirst;
-  final IndexedWidgetBuilder builder;
-  final Color paperColor;
   final bool gesturesEnabled;
-  final Widget Function(double curlProgress, bool isCurling)? bookmarkBuilder;
+  final Color paperColor;
+  final BookmarkCurlBuilder? bookmarkBuilder;
+  final Widget Function(BuildContext context, int pageIndex) builder;
 
   const RealisticPageCurl({
     super.key,
     required this.pageCount,
-    required this.initialPage,
+    this.initialPage = 0,
     this.onPageChanged,
     this.onSwipeBeforeFirst,
-    required this.builder,
-    this.paperColor = const Color(0xFFF5EACB),
     this.gesturesEnabled = true,
+    this.paperColor = const Color(0xFFF6F0E0),
     this.bookmarkBuilder,
+    required this.builder,
   });
 
   @override
@@ -37,12 +45,11 @@ class _RealisticPageCurlState extends State<RealisticPageCurl>
     with SingleTickerProviderStateMixin {
   late int _currentPage;
   late AnimationController _animController;
-  late Animation<double> _animation;
 
-  double _curlProgress = 0.0;
-  bool _isForward = true;
-  bool _isDragging = false;
-  CurlCorner _activeCorner = CurlCorner.bottomRight;
+  Offset _dragOrigin = Offset.zero;
+  Offset _dragCurrent = Offset.zero;
+  CurlDragMode _dragMode = CurlDragMode.none;
+  int _sigma = 1; // +1: Right -> Left (Forward), -1: Left -> Right (Backward)
 
   @override
   void initState() {
@@ -50,35 +57,16 @@ class _RealisticPageCurlState extends State<RealisticPageCurl>
     _currentPage = widget.initialPage;
     _animController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 380),
+      duration: const Duration(milliseconds: 360),
     );
+  }
 
-    _animation = Tween<double>(begin: 0.0, end: 0.0).animate(_animController);
-
-    _animController.addListener(() {
-      setState(() {
-        _curlProgress = _animation.value;
-      });
-    });
-
-    _animController.addStatusListener((status) {
-      if (status == AnimationStatus.completed) {
-        if (_curlProgress >= 0.99) {
-          final newPage = _isForward ? _currentPage + 1 : _currentPage - 1;
-          setState(() {
-            _currentPage = newPage.clamp(0, widget.pageCount - 1);
-            _curlProgress = 0.0;
-            _isDragging = false;
-          });
-          widget.onPageChanged?.call(_currentPage);
-        } else {
-          setState(() {
-            _curlProgress = 0.0;
-            _isDragging = false;
-          });
-        }
-      }
-    });
+  @override
+  void didUpdateWidget(covariant RealisticPageCurl oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialPage != _currentPage) {
+      _currentPage = widget.initialPage;
+    }
   }
 
   @override
@@ -87,329 +75,425 @@ class _RealisticPageCurlState extends State<RealisticPageCurl>
     super.dispose();
   }
 
-  void _onHorizontalDragStart(DragStartDetails details, double height) {
-    if (!widget.gesturesEnabled || _animController.isAnimating) {
+  void _onPanStart(DragDownDetails details, Size size) {
+    if (!widget.gesturesEnabled || _animController.isAnimating) return;
+
+    final pos = details.localPosition;
+    _dragOrigin = pos;
+    _dragCurrent = pos;
+
+    // Corner detection: Top or Bottom 25% boundary
+    final double cornerThreshold = size.height * 0.25;
+    if (pos.dy <= cornerThreshold || pos.dy >= size.height - cornerThreshold) {
+      _dragMode = CurlDragMode.cornerPull;
+    } else {
+      _dragMode = CurlDragMode.edgePull;
+    }
+
+    // Direction sign determination:
+    // Touch on right half -> dragging left (R -> L, sigma = +1)
+    // Touch on left half  -> dragging right (L -> R, sigma = -1)
+    if (pos.dx >= size.width * 0.5) {
+      _sigma = 1;
+    } else {
+      _sigma = -1;
+    }
+
+    // Boundary conditions
+    if (_sigma == 1 && _currentPage >= widget.pageCount - 1) {
+      _dragMode = CurlDragMode.none;
       return;
     }
-    _isDragging = true;
-
-    final dy = details.localPosition.dy;
-    if (dy > height * 0.62) {
-      _activeCorner = CurlCorner.bottomRight;
-    } else if (dy < height * 0.38) {
-      _activeCorner = CurlCorner.topRight;
-    } else {
-      _activeCorner = CurlCorner.center;
+    if (_sigma == -1 && _currentPage <= 0) {
+      widget.onSwipeBeforeFirst?.call();
+      _dragMode = CurlDragMode.none;
+      return;
     }
+
+    SoundService.onPageTouchDown();
+    setState(() {});
   }
 
-  void _onHorizontalDragUpdate(DragUpdateDetails details, double width) {
-    if (!_isDragging || _animController.isAnimating || width <= 0) {
-      return;
-    }
-
-    if (_curlProgress == 0.0) {
-      final delta = details.primaryDelta ?? 0.0;
-      if (delta < 0) {
-        if (_currentPage < widget.pageCount - 1) {
-          _isForward = true;
-        } else {
-          return;
-        }
-      } else if (delta > 0) {
-        if (_currentPage > 0) {
-          _isForward = false;
-        } else {
-          widget.onSwipeBeforeFirst?.call();
-          _isDragging = false;
-          return;
-        }
-      } else {
-        return;
-      }
-    }
-
-    final delta = details.primaryDelta ?? 0.0;
-    final double change = _isForward ? -delta / width : delta / width;
+  void _onPanUpdate(DragUpdateDetails details, Size size) {
+    if (_dragMode == CurlDragMode.none || !widget.gesturesEnabled) return;
+    
+    // Calculate instantaneous velocity: v = delta_x / dt
+    final double deltaX = (details.delta.dx).abs();
+    final double normV = (deltaX / (size.width * 0.05)).clamp(0.0, 1.0);
+    SoundService.onPageTouchMove(normV);
 
     setState(() {
-      _curlProgress = (_curlProgress + change).clamp(0.0, 1.0);
+      _dragCurrent = details.localPosition;
     });
   }
 
-  void _onHorizontalDragEnd(DragEndDetails details) {
-    if (!_isDragging || _animController.isAnimating) {
-      return;
-    }
-    _isDragging = false;
+  void _onPanEnd(DragEndDetails details, Size size) {
+    // Exact Hand Lift: Silence page rustle immediately
+    SoundService.onPageTouchUp();
+    if (_dragMode == CurlDragMode.none || !widget.gesturesEnabled) return;
 
-    final velocity = details.primaryVelocity ?? 0.0;
-    bool shouldComplete = false;
+    final double totalW = size.width;
+    final double displacement = (_dragCurrent.dx - _dragOrigin.dx);
+    final double effectiveDragDist = (_sigma == 1) ? -displacement : displacement;
+    final double velocity = details.velocity.pixelsPerSecond.dx;
+    final double signedVelocity = (_sigma == 1) ? -velocity : velocity;
 
-    if (_isForward) {
-      if (velocity < -260 || _curlProgress > 0.35) {
-        shouldComplete = true;
-      }
-    } else {
-      if (velocity > 260 || _curlProgress > 0.35) {
-        shouldComplete = true;
-      }
-    }
+    // Turn threshold: > 26% width or snappy flick in flip direction
+    final bool completeTurn = effectiveDragDist > totalW * 0.26 || signedVelocity > 400.0;
+    final double startVal = (effectiveDragDist / totalW).clamp(0.0, 1.0);
+    final double endVal = completeTurn ? 1.0 : 0.0;
 
-    final target = shouldComplete ? 1.0 : 0.0;
-    _animation = Tween<double>(
-      begin: _curlProgress,
-      end: target,
-    ).animate(CurvedAnimation(
+    // Directional easing duration:
+    // Forward (R->L): Fast dynamic flick (220-340ms)
+    // Backward (L->R): Deliberate controlled sweep (260-380ms)
+    final int baseDuration = (_sigma == 1) ? 310 : 360;
+    _animController.duration = Duration(
+      milliseconds: ((1.0 - startVal * 0.7) * baseDuration).clamp(180, 400).toInt(),
+    );
+
+    // Directional Easing curve:
+    // Forward (R->L): easeOutCubic with snappy damping
+    // Backward (L->R): smoothstep / easeInOutCubic (hand controlled)
+    final Curve directionalCurve = (_sigma == 1) ? Curves.easeOutCubic : Curves.easeInOutCubic;
+    final CurvedAnimation smoothAnim = CurvedAnimation(
       parent: _animController,
-      curve: Curves.easeOutCubic,
-    ));
-    _animController.forward(from: 0.0);
+      curve: directionalCurve,
+    );
+
+    _animController.reset();
+    final Animation<double> anim = Tween<double>(begin: startVal, end: endVal).animate(smoothAnim);
+
+    double lastVal = startVal;
+    anim.addListener(() {
+      final double currentVal = anim.value;
+      // Angular velocity |dTheta/dt|
+      final double thetaDot = (currentVal - lastVal).abs() * 3.5;
+      
+      lastVal = currentVal;
+
+      setState(() {
+        final double dist = anim.value * totalW;
+        if (_sigma == 1) {
+          _dragCurrent = Offset(_dragOrigin.dx - dist, _dragCurrent.dy);
+        } else {
+          _dragCurrent = Offset(_dragOrigin.dx + dist, _dragCurrent.dy);
+        }
+      });
+    });
+
+    anim.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        if (completeTurn) {
+          SoundService.triggerLandingThump(); // EXACT THETA = PI BURST
+          setState(() {
+            _currentPage = (_sigma == 1) ? _currentPage + 1 : _currentPage - 1;
+            widget.onPageChanged?.call(_currentPage);
+          });
+        } else {
+          
+        }
+        _dragMode = CurlDragMode.none;
+        _animController.reset();
+      }
+    });
+
+    _animController.forward();
   }
 
   @override
   Widget build(BuildContext context) {
-    final solidPaper = widget.paperColor.withAlpha(255);
-
     return LayoutBuilder(
       builder: (context, constraints) {
-        final w = constraints.maxWidth;
-        final h = constraints.maxHeight;
+        final Size size = Size(constraints.maxWidth, constraints.maxHeight);
 
-        return ClipRect(
-          clipBehavior: Clip.hardEdge,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onHorizontalDragStart: (d) => _onHorizontalDragStart(d, h),
-            onHorizontalDragUpdate: (d) => _onHorizontalDragUpdate(d, w),
-            onHorizontalDragEnd: _onHorizontalDragEnd,
-            child: Container(
-              color: solidPaper,
-              child: Stack(
-                fit: StackFit.expand,
-                clipBehavior: Clip.hardEdge,
-                children: [
-                  _buildBasePage(w, h, solidPaper),
-                  if (_curlProgress > 0.001) _buildCurlingPage(w, h, solidPaper),
-                  if (widget.bookmarkBuilder != null)
-                    widget.bookmarkBuilder!(_curlProgress, _curlProgress > 0.001),
-                ],
-              ),
-            ),
+        final int activeIndex = _currentPage;
+        final int underneathIndex = (_sigma == 1)
+            ? (_currentPage + 1).clamp(0, widget.pageCount - 1)
+            : (_currentPage - 1).clamp(0, widget.pageCount - 1);
+
+        final bool isDragging = _dragMode != CurlDragMode.none;
+        final double dragDist = (_dragCurrent.dx - _dragOrigin.dx).abs();
+        final double curlProgress = isDragging ? (dragDist / size.width).clamp(0.0, 1.0) : 0.0;
+
+        return GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onPanDown: (d) => _onPanStart(d, size),
+          onPanUpdate: (d) => _onPanUpdate(d, size),
+          onPanEnd: (d) => _onPanEnd(d, size),
+          child: Stack(
+            fit: StackFit.expand,
+            clipBehavior: Clip.none,
+            children: [
+              // 1. Underneath destination page
+              widget.builder(context, underneathIndex),
+
+              // 2. Exact Directional Developable Curl Mesh
+              if (isDragging)
+                CustomPaint(
+                  size: size,
+                  painter: _DirectionalDevelopableCurlPainter(
+                    dragOrigin: _dragOrigin,
+                    dragCurrent: _dragCurrent,
+                    mode: _dragMode,
+                    sigma: _sigma,
+                    currentPage: _currentPage,
+                    totalPages: widget.pageCount,
+                    paperColor: widget.paperColor,
+                  ),
+                ),
+
+              // 3. Resting page
+              if (!isDragging)
+                widget.builder(context, activeIndex),
+
+              // 4. Bookmark Sync Layer
+              if (widget.bookmarkBuilder != null)
+                widget.bookmarkBuilder!(curlProgress, isDragging),
+            ],
           ),
         );
       },
     );
   }
-
-  Widget _buildBasePage(double w, double h, Color solidPaper) {
-    int baseIndex;
-    if (_isForward) {
-      baseIndex = _curlProgress > 0.001
-          ? math.min(_currentPage + 1, widget.pageCount - 1)
-          : _currentPage;
-    } else {
-      baseIndex = _currentPage;
-    }
-
-    return Container(
-      width: w,
-      height: h,
-      color: solidPaper,
-      child: widget.builder(context, baseIndex),
-    );
-  }
-
-  Widget _buildCurlingPage(double w, double h, Color solidPaper) {
-    final double p = _curlProgress;
-
-    if (_isForward) {
-      final int topPageIndex = _currentPage;
-      return _buildForwardCurl(w, h, p, topPageIndex, solidPaper);
-    } else {
-      final int prevPageIndex = math.max(_currentPage - 1, 0);
-      return _buildBackwardCurl(w, h, p, prevPageIndex, solidPaper);
-    }
-  }
-
-  Widget _buildForwardCurl(
-      double w, double h, double p, int pageIndex, Color solidPaper) {
-    double foldXTop;
-    double foldXBottom;
-
-    if (_activeCorner == CurlCorner.bottomRight) {
-      foldXBottom = w * (1.0 - (p * 1.15)).clamp(0.0, 1.0);
-      foldXTop = w * (1.0 - (p * 0.85)).clamp(0.0, 1.0);
-    } else if (_activeCorner == CurlCorner.topRight) {
-      foldXTop = w * (1.0 - (p * 1.15)).clamp(0.0, 1.0);
-      foldXBottom = w * (1.0 - (p * 0.85)).clamp(0.0, 1.0);
-    } else {
-      foldXTop = w * (1.0 - p);
-      foldXBottom = w * (1.0 - p);
-    }
-
-    final double minFoldX = math.min(foldXTop, foldXBottom);
-    final double maxFoldX = math.max(foldXTop, foldXBottom);
-    final double rollWidth = math.min(26.0, math.min(minFoldX, w - maxFoldX));
-
-    return Stack(
-      fit: StackFit.expand,
-      clipBehavior: Clip.none,
-      children: [
-        Positioned(
-          left: minFoldX,
-          top: 0,
-          bottom: 0,
-          width: math.min(38.0, w - minFoldX),
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-                colors: [
-                  Colors.black.withAlpha((115 * (1.0 - p)).round()),
-                  Colors.transparent,
-                ],
-              ),
-            ),
-          ),
-        ),
-        ClipPath(
-          clipper: _FoldClipper(foldXTop, foldXBottom),
-          child: Container(
-            width: w,
-            height: h,
-            color: solidPaper,
-            child: widget.builder(context, pageIndex),
-          ),
-        ),
-        if (rollWidth > 1.0)
-          Positioned(
-            left: math.max(0.0, minFoldX - rollWidth),
-            top: 0,
-            bottom: 0,
-            width: (maxFoldX - minFoldX) + (rollWidth * 1.6),
-            child: IgnorePointer(
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.centerLeft,
-                    end: Alignment.centerRight,
-                    colors: [
-                      Color.alphaBlend(const Color(0xFFC7B69B), solidPaper),
-                      solidPaper,
-                      Colors.white.withAlpha(80),
-                      Color.alphaBlend(const Color(0xFFB5A184), solidPaper),
-                    ],
-                    stops: const [0.0, 0.35, 0.65, 1.0],
-                  ),
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildBackwardCurl(
-      double w, double h, double p, int pageIndex, Color solidPaper) {
-    final double foldX = w * p;
-    final double rollWidth = math.min(26.0, math.min(foldX, w - foldX));
-
-    return Stack(
-      fit: StackFit.expand,
-      clipBehavior: Clip.none,
-      children: [
-        Positioned(
-          left: foldX,
-          top: 0,
-          bottom: 0,
-          width: math.min(38.0, w - foldX),
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-                colors: [
-                  Colors.black.withAlpha((115 * (1.0 - p)).round()),
-                  Colors.transparent,
-                ],
-              ),
-            ),
-          ),
-        ),
-        ClipRect(
-          clipper: _RectClipper(0.0, foldX),
-          child: Container(
-            width: w,
-            height: h,
-            color: solidPaper,
-            child: widget.builder(context, pageIndex),
-          ),
-        ),
-        if (rollWidth > 1.0)
-          Positioned(
-            left: math.max(0.0, foldX - rollWidth),
-            top: 0,
-            bottom: 0,
-            width: rollWidth * 1.6,
-            child: IgnorePointer(
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.centerLeft,
-                    end: Alignment.centerRight,
-                    colors: [
-                      Color.alphaBlend(const Color(0xFFC7B69B), solidPaper),
-                      solidPaper,
-                      Colors.white.withAlpha(80),
-                      Color.alphaBlend(const Color(0xFFB5A184), solidPaper),
-                    ],
-                    stops: const [0.0, 0.35, 0.65, 1.0],
-                  ),
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
 }
 
-class _RectClipper extends CustomClipper<Rect> {
-  final double startX;
-  final double endX;
+/// ============================================================================
+/// DIRECTIONAL DEVELOPABLE CURL PAINTER
+/// Uses exact mathematical sign sigma = +-1:
+/// theta(s, t) = sigma * Theta(t) * [1 - (1 - s/L)^2]
+/// kappa(s, t) = sigma * (2*Theta(t)/L) * (1 - s/L)
+/// Mirror transform Mx = diag(-1, 1, 1) for Left -> Right flips
+/// Stack landing incline epsilon = arcsin(h / W)
+/// ============================================================================
+class _DirectionalDevelopableCurlPainter extends CustomPainter {
+  final Offset dragOrigin;
+  final Offset dragCurrent;
+  final CurlDragMode mode;
+  final int sigma; // +1: Forward (R->L), -1: Backward (L->R)
+  final int currentPage;
+  final int totalPages;
+  final Color paperColor;
 
-  _RectClipper(this.startX, this.endX);
+  _DirectionalDevelopableCurlPainter({
+    required this.dragOrigin,
+    required this.dragCurrent,
+    required this.mode,
+    required this.sigma,
+    required this.currentPage,
+    required this.totalPages,
+    required this.paperColor,
+  });
 
   @override
-  Rect getClip(Size size) {
-    return Rect.fromLTWH(startX, 0, math.max(0.0, endX - startX), size.height);
+  void paint(Canvas canvas, Size size) {
+    final double totalW = size.width;
+    final double totalH = size.height;
+
+    final double displacement = (dragCurrent.dx - dragOrigin.dx);
+    final double effectiveDist = (sigma == 1) ? -displacement : displacement;
+    final double rawProgress = (effectiveDist / totalW).clamp(0.001, 0.999);
+
+    // Landing Stack Height angle epsilon = arcsin(stackHeight / bookWidth)
+    final double leftStackHeight = (currentPage / totalPages) * 12.0; // mm equivalent
+    final double rightStackHeight = ((totalPages - currentPage) / totalPages) * 12.0;
+    final double epsilon = math.asin(((sigma == 1 ? leftStackHeight : rightStackHeight) / totalW).clamp(0.0, 0.15));
+
+    // Directional Time-Theta Profile:
+    // R->L (sigma = +1): Flick overshoot settling
+    // L->R (sigma = -1): Smoothstep (3t^2 - 2t^3)
+    final double thetaT;
+    if (sigma == 1) {
+      // theta(t) with damped landing settling
+      thetaT = (math.pi + epsilon) * math.pow(math.sin(rawProgress * math.pi * 0.5), 1.85);
+    } else {
+      // theta(t) with controlled smoothstep
+      thetaT = (math.pi + epsilon) * (rawProgress * rawProgress * (3.0 - 2.0 * rawProgress));
+    }
+
+    if (mode == CurlDragMode.edgePull) {
+      _paintCylindricalEdge(canvas, size, rawProgress, thetaT);
+    } else {
+      _paintConicalCorner(canvas, size, rawProgress, thetaT);
+    }
+  }
+
+  void _paintCylindricalEdge(Canvas canvas, Size size, double progress, double thetaT) {
+    final double w = size.width;
+    final double h = size.height;
+
+    // kappa(s) = sigma * (2*Theta/L) * (1 - s/L)
+    // Radius of curvature R at crease line
+    final double baseR = (22.0 + 32.0 * (1.0 - progress)).clamp(14.0, 58.0);
+    final double foldX = (sigma == 1) ? (w * (1.0 - progress)) : (w * progress);
+
+    // Apply Mirror Transform Mx = diag(-1, 1, 1) when sigma == -1
+    canvas.save();
+    if (sigma == -1) {
+      canvas.translate(w, 0);
+      canvas.scale(-1, 1);
+    }
+
+    // Mirror-normalized fold coordinate (always acts as right-to-left in transformed frame)
+    final double normFoldX = (sigma == 1) ? foldX : (w - foldX);
+
+    // 1. Flat Base Sheet Boundary
+    final Path flatSheet = Path()..addRect(Rect.fromLTWH(0, 0, normFoldX, h));
+
+    // 2. Drop Shadow onto underneath sheet
+    final double shadowWidth = baseR * 2.5;
+    final Paint shadowPaint = Paint()
+      ..shader = ui.Gradient.linear(
+        Offset(normFoldX, 0),
+        Offset(normFoldX + shadowWidth, 0),
+        [
+          Colors.black.withAlpha(165),
+          Colors.black.withAlpha(65),
+          Colors.transparent,
+        ],
+        const [0.0, 0.4, 1.0],
+      );
+
+    canvas.drawRect(Rect.fromLTWH(normFoldX, 0, shadowWidth, h), shadowPaint);
+
+    // Draw Resting Flat Surface
+    final Paint paperPaint = Paint()..color = paperColor;
+    canvas.drawPath(flatSheet, paperPaint);
+
+    // 3. Curled Boundary (Euler Spiral via Clamped BC tangents)
+    final double rollSpan = (math.pi * baseR).clamp(12.0, w * 0.42);
+    final Path spiralLip = Path();
+    spiralLip.moveTo(normFoldX, 0);
+
+    // Asymmetric cubic Bezier: P1 clamped at fold, P2 relaxed at zero-moment tip
+    spiralLip.cubicTo(
+      normFoldX + baseR * 0.70, h * 0.18,
+      normFoldX + baseR * 0.40, h * 0.48,
+      normFoldX, h * 0.5,
+    );
+    spiralLip.cubicTo(
+      normFoldX - baseR * 0.22, h * 0.52,
+      normFoldX + baseR * 0.62, h * 0.82,
+      normFoldX, h,
+    );
+    spiralLip.lineTo(normFoldX - rollSpan * 0.52, h);
+    spiralLip.lineTo(normFoldX - rollSpan * 0.52, 0);
+    spiralLip.close();
+
+    // Verso (back-side) Shading with Specular Crest
+    final Paint surfaceShading = Paint()
+      ..shader = ui.Gradient.linear(
+        Offset(normFoldX - rollSpan * 0.6, 0),
+        Offset(normFoldX + rollSpan * 0.6, 0),
+        [
+          paperColor.withAlpha(200),
+          Colors.white.withAlpha(245),
+          const Color(0xFFDDD2BC),
+          const Color(0xFF8A7763),
+        ],
+        const [0.0, 0.32, 0.70, 1.0],
+      );
+
+    canvas.drawPath(spiralLip, surfaceShading);
+
+    // Thin realistic edge border
+    final Paint rimLine = Paint()
+      ..color = Colors.black.withAlpha(32)
+      ..strokeWidth = 0.8
+      ..style = PaintingStyle.stroke;
+    canvas.drawPath(spiralLip, rimLine);
+
+    canvas.restore();
+  }
+
+  void _paintConicalCorner(Canvas canvas, Size size, double progress, double thetaT) {
+    final double w = size.width;
+    final double h = size.height;
+    final bool isTopCorner = dragOrigin.dy < h * 0.5;
+
+    canvas.save();
+    if (sigma == -1) {
+      canvas.translate(w, 0);
+      canvas.scale(-1, 1);
+    }
+
+    // Normalized frame coordinates
+    final Offset normCorner = Offset(w, isTopCorner ? 0.0 : h);
+
+    // Conical half-angle alpha(t) variation
+    final double alpha = (math.pi / 9.0) + (math.pi / 3.4) * progress;
+    final double sectorBeta = 2.0 * math.pi * math.sin(alpha);
+
+    final double foldHypot = math.sqrt(w * w + h * h) * progress * (0.85 + 0.15 * (sectorBeta / (2.0 * math.pi)));
+    final double thetaAspect = math.atan2(h, w);
+
+    final double foldX = (foldHypot * math.cos(thetaAspect)).clamp(12.0, w);
+    final double foldY = (foldHypot * math.sin(thetaAspect)).clamp(12.0, h);
+
+    final Offset ptEdgeH = Offset(w - foldX, isTopCorner ? 0.0 : h);
+    final Offset ptEdgeV = Offset(w, isTopCorner ? foldY : h - foldY);
+
+    // Conical Drop Shadow
+    final Path shadowArea = Path()
+      ..moveTo(normCorner.dx, normCorner.dy)
+      ..lineTo(ptEdgeH.dx, ptEdgeH.dy)
+      ..lineTo(ptEdgeV.dx, ptEdgeV.dy)
+      ..close();
+
+    final Paint coneShadow = Paint()
+      ..color = Colors.black.withAlpha(145)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 9.0);
+    canvas.drawPath(shadowArea, coneShadow);
+
+    // Conical Peeling Flap
+    final Path conicalFlap = Path()..moveTo(ptEdgeH.dx, ptEdgeH.dy);
+
+    // Normalized drag destination
+    final double normCurrentX = (sigma == 1) ? dragCurrent.dx : (w - dragCurrent.dx);
+    final Offset normP3 = Offset(normCurrentX, dragCurrent.dy);
+
+    final Offset p1 = Offset(
+      ptEdgeH.dx + (normP3.dx - ptEdgeH.dx) * (0.32 + 0.08 * math.sin(alpha)),
+      ptEdgeH.dy + (normP3.dy - ptEdgeH.dy) * 0.12,
+    );
+    final Offset p2 = Offset(
+      normP3.dx - (normP3.dx - ptEdgeV.dx) * 0.22,
+      normP3.dy - (normP3.dy - ptEdgeV.dy) * (0.38 + 0.12 * math.cos(alpha)),
+    );
+
+    conicalFlap.cubicTo(p1.dx, p1.dy, p2.dx, p2.dy, normP3.dx, normP3.dy);
+    conicalFlap.lineTo(ptEdgeV.dx, ptEdgeV.dy);
+    conicalFlap.close();
+
+    // Verso surface lighting gradient
+    final Paint flapShading = Paint()
+      ..shader = ui.Gradient.linear(
+        ptEdgeH,
+        normP3,
+        [
+          const Color(0xFFDCD0BA),
+          paperColor,
+          Colors.white.withAlpha(235),
+          const Color(0xFFC4B69E),
+        ],
+        const [0.0, 0.38, 0.72, 1.0],
+      );
+
+    canvas.drawPath(conicalFlap, flapShading);
+
+    final Paint flapBorder = Paint()
+      ..color = Colors.black.withAlpha(35)
+      ..strokeWidth = 0.85
+      ..style = PaintingStyle.stroke;
+    canvas.drawPath(conicalFlap, flapBorder);
+
+    canvas.restore();
   }
 
   @override
-  bool shouldReclip(_RectClipper old) =>
-      old.startX != startX || old.endX != endX;
-}
-
-class _FoldClipper extends CustomClipper<Path> {
-  final double foldXTop;
-  final double foldXBottom;
-
-  _FoldClipper(this.foldXTop, this.foldXBottom);
-
-  @override
-  Path getClip(Size size) {
-    final path = Path();
-    path.moveTo(0, 0);
-    path.lineTo(foldXTop.clamp(0.0, size.width), 0);
-    path.lineTo(foldXBottom.clamp(0.0, size.width), size.height);
-    path.lineTo(0, size.height);
-    path.close();
-    return path;
+  bool shouldRepaint(covariant _DirectionalDevelopableCurlPainter old) {
+    return old.dragCurrent != dragCurrent ||
+        old.mode != mode ||
+        old.sigma != sigma ||
+        old.currentPage != currentPage;
   }
-
-  @override
-  bool shouldReclip(_FoldClipper old) =>
-      old.foldXTop != foldXTop || old.foldXBottom != foldXBottom;
 }

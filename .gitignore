@@ -16,3 +16,4 @@ __pycache__/
 Thumbs.db
 build/app/outputs/symbols/
 *.apk
+test/page_movement_sandbox.dart

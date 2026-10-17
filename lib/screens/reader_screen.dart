@@ -29,6 +29,33 @@ class ReaderScreen extends StatefulWidget {
 
 class _ReaderScreenState extends State<ReaderScreen>
     with SingleTickerProviderStateMixin {
+  void _jumpToBookmark() {
+    if (widget.book.bookmarkedPages.isEmpty) return;
+    final target = widget.book.bookmarkedPages.first;
+    SoundService.playWoodTap();
+    if (!_isCoverOpen) {
+      _openHardCover();
+    }
+    setState(() {
+      _currentPage = target;
+      _bookmarkDrapeController.value = 1.0;
+    });
+    SoundService.playWoodTap();
+    if (!_isCoverOpen) {
+      _openHardCover();
+    }
+    setState(() {
+      _currentPage = target;
+      _bookmarkDrapeController.value = 1.0;
+    });
+    if (_currentMode == ReadingMode.horizontal && _horizontalController.hasClients) {
+      _horizontalController.jumpToPage(target);
+    } else if (_currentMode == ReadingMode.vertical && _verticalController.hasClients) {
+      _verticalController.jumpTo(target * _computedBookHeight);
+    }
+    _saveProgress(target);
+  }
+
   late ProgressiveDocumentController _controller;
   late int _currentPage;
   late ReadingMode _currentMode;
@@ -39,6 +66,8 @@ class _ReaderScreenState extends State<ReaderScreen>
   late Animation<double> _bookmarkDrapeAnimation;
 
   ActiveTool _activeTool = ActiveTool.none;
+  double _penWidth = 2.0;
+  double _highlighterWidth = 12.0;
   Color _highlightColor = const Color(0xFFFFEB3B);
   Color _penColor = const Color(0xFF1A237E);
   Color _ribbonColor = const Color(0xFFC62828);
@@ -57,6 +86,7 @@ class _ReaderScreenState extends State<ReaderScreen>
   @override
   void initState() {
     super.initState();
+    SoundService.init();
     _currentMode = widget.initialMode;
     _currentPage = widget.book.lastPage;
 
@@ -330,6 +360,7 @@ class _ReaderScreenState extends State<ReaderScreen>
   }
 
   void _onDrawingPanStart(DragStartDetails details) {
+    SoundService.onWritingTouchDown(_activeTool.name);
     if (_activeTool == ActiveTool.none) return;
     if (_activeTool == ActiveTool.eraser) {
       _eraseAtPoint(details.localPosition);
@@ -342,6 +373,9 @@ class _ReaderScreenState extends State<ReaderScreen>
   }
 
   void _onDrawingPanUpdate(DragUpdateDetails details) {
+    final double dist = details.delta.distance;
+    final double normSpeed = (dist / 14.0).clamp(0.0, 1.0);
+    SoundService.onWritingTouchMove(normSpeed);
     if (_activeTool == ActiveTool.none) return;
     if (_activeTool == ActiveTool.eraser) {
       _eraseAtPoint(details.localPosition);
@@ -353,6 +387,7 @@ class _ReaderScreenState extends State<ReaderScreen>
   }
 
   void _onDrawingPanEnd(DragEndDetails details) {
+    SoundService.onWritingTouchUp();
     if (_activeTool == ActiveTool.none || _activeTool == ActiveTool.eraser) {
       return;
       }
@@ -758,16 +793,23 @@ class _ReaderScreenState extends State<ReaderScreen>
           penColor: _penColor,
           ribbonColor: _ribbonColor,
           isBookmarked: isBookmarked,
+          hasBookmarks: widget.book.bookmarkedPages.isNotEmpty,
           currentPage: _currentPage,
           totalPages: total,
           onBookmarkTap: _toggleBookmark,
+          onJumpToBookmark: _jumpToBookmark,
+          onAddNoteTap: _showAddNoteDialog,
+          penWidth: _penWidth,
+          highlighterWidth: _highlighterWidth,
+          onPenWidthChanged: (w) => setState(() => _penWidth = w),
+          onHighlighterWidthChanged: (w) => setState(() => _highlighterWidth = w),
           onBookmarkColorTap: () async {
             final c = await ColorWheelDialog.show(context,
                 initialColor: _ribbonColor, title: "Bookmark Ribbon Color");
             if (!mounted || c == null) return;
             setState(() => _ribbonColor = c);
           },
-          onAddNoteTap: () => _showAddNoteDialog(),
+          // note handled above
           onHighlighterColorTap: () async {
             final c = await ColorWheelDialog.show(context,
                 initialColor: _highlightColor, title: "Highlighter Color");
@@ -789,7 +831,7 @@ class _ReaderScreenState extends State<ReaderScreen>
 
               // BALANCED DESK MARGINS: Guarantees 34px dark wood table visible on both sides
               final double maxBookW = screenW - 68.0;
-              final double maxBookH = screenH - 72.0;
+              final double maxBookH = screenH - 145.0;
 
               double targetW = maxBookW;
               double targetH = targetW * 1.40;
@@ -823,6 +865,16 @@ class _ReaderScreenState extends State<ReaderScreen>
                   bookHeight: bookHeight,
                   onOpen: _openHardCover,
                   onClose: _closeHardCover,
+                  bookmarkWidget: RibbonBookmarkWidget(
+                    ribbonColor: _ribbonColor,
+                    bookHeight: bookHeight,
+                    leftOffset: 4.0,
+                    isCurrentPageBookmarked: isBookmarked,
+                    isBookmarkedAhead: widget.book.bookmarkedPages.any((p) => p >= _currentPage) || !_isCoverOpen,
+                    noteText: currentNote,
+                    drapeProgress: _isCoverOpen ? 1.0 : 0.0,
+                    onNoteTap: () => _showAddNoteDialog(),
+                  ),
                   bookPagesContent: Container(
                     decoration: BoxDecoration(
                       color: solidPaperColor,
@@ -833,7 +885,7 @@ class _ReaderScreenState extends State<ReaderScreen>
                     ),
                     child: Stack(
                       fit: StackFit.expand,
-                      clipBehavior: Clip.hardEdge,
+                      clipBehavior: Clip.none,
                       children: [
                         _buildReaderContent(
                             total, bookHeight, isBookmarked, currentNote),
@@ -844,6 +896,7 @@ class _ReaderScreenState extends State<ReaderScreen>
                               onPanStart: _onDrawingPanStart,
                               onPanUpdate: _onDrawingPanUpdate,
                               onPanEnd: _onDrawingPanEnd,
+                                              onPanCancel: SoundService.onWritingTouchUp,
                               child: CustomPaint(
                                 painter: _LiveDrawingPainter(
                                   tool: _activeTool,
@@ -851,6 +904,9 @@ class _ReaderScreenState extends State<ReaderScreen>
                                       ? _highlightColor
                                       : _penColor,
                                   points: _activePoints,
+                                  strokeWidth: _activeTool == ActiveTool.highlighter
+                                      ? _highlighterWidth
+                                      : _penWidth,
                                 ),
                               ),
                             ),
@@ -888,7 +944,7 @@ class _ReaderScreenState extends State<ReaderScreen>
             },
             child: Stack(
               fit: StackFit.expand,
-              clipBehavior: Clip.hardEdge,
+              clipBehavior: Clip.none,
               children: [
                 ListView.builder(
                   controller: _verticalController,
@@ -915,7 +971,7 @@ class _ReaderScreenState extends State<ReaderScreen>
                 RibbonBookmarkWidget(
                   ribbonColor: _ribbonColor,
                   bookHeight: bookHeight,
-                  leftOffset: 16.0,
+                  leftOffset: 3.0,
                   isCurrentPageBookmarked: isBookmarked,
                   noteText: currentNote,
                   drapeProgress: drapeProg,
@@ -936,7 +992,7 @@ class _ReaderScreenState extends State<ReaderScreen>
             },
             child: Stack(
               fit: StackFit.expand,
-              clipBehavior: Clip.hardEdge,
+              clipBehavior: Clip.none,
               children: [
                 PageView.builder(
                   controller: _horizontalController,
@@ -949,7 +1005,7 @@ class _ReaderScreenState extends State<ReaderScreen>
                 RibbonBookmarkWidget(
                   ribbonColor: _ribbonColor,
                   bookHeight: bookHeight,
-                  leftOffset: 16.0,
+                  leftOffset: 3.0,
                   isCurrentPageBookmarked: isBookmarked,
                   noteText: currentNote,
                   drapeProgress: drapeProg,
@@ -959,24 +1015,14 @@ class _ReaderScreenState extends State<ReaderScreen>
           );
         } else {
           return RealisticPageCurl(
+            key: ValueKey('curl_page_$_currentPage'),
             pageCount: total,
             initialPage: _currentPage,
             onPageChanged: _saveProgress,
             onSwipeBeforeFirst: _closeHardCover,
-            gesturesEnabled: _activeTool == ActiveTool.none,
+            gesturesEnabled: _activeTool != ActiveTool.pen && _activeTool != ActiveTool.pencil && _activeTool != ActiveTool.highlighter ,
             paperColor: _pageBgColor.withAlpha(255),
-            bookmarkBuilder: (curlProgress, isCurling) {
-              return RibbonBookmarkWidget(
-                ribbonColor: _ribbonColor,
-                bookHeight: bookHeight,
-                leftOffset: 16.0,
-                isCurrentPageBookmarked: isBookmarked,
-                noteText: currentNote,
-                drapeProgress: drapeProg,
-                curlProgress: curlProgress,
-                isCurling: isCurling,
-              );
-            },
+            
             builder: (ctx, idx) => _buildPageContent(idx, total),
           );
         }
@@ -1126,11 +1172,13 @@ class _LiveDrawingPainter extends CustomPainter {
   final ActiveTool tool;
   final Color color;
   final List<Offset> points;
+  final double strokeWidth;
 
   _LiveDrawingPainter({
     required this.tool,
     required this.color,
     required this.points,
+    required this.strokeWidth,
   });
 
   @override
@@ -1145,15 +1193,15 @@ class _LiveDrawingPainter extends CustomPainter {
     if (tool == ActiveTool.highlighter) {
       paint
         ..color = color.withAlpha(120)
-        ..strokeWidth = 18.0;
+        ..strokeWidth = strokeWidth;
     } else if (tool == ActiveTool.pen) {
       paint
         ..color = color
-        ..strokeWidth = 2.4;
+        ..strokeWidth = strokeWidth;
     } else if (tool == ActiveTool.pencil) {
       paint
         ..color = const Color(0xFF424242)
-        ..strokeWidth = 1.4;
+        ..strokeWidth = strokeWidth;
     }
 
     final path = Path()..moveTo(points.first.dx, points.first.dy);

@@ -2,17 +2,11 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 class ColorWheelMath {
-  /// Color wheel par exact 180 degree samne (Opposite Hue) ka color nikalta hai
   static Color getOppositeWheelColor(Color ribbonColor) {
     final hsv = HSVColor.fromColor(ribbonColor);
-
-    // 180° Diametrical Opposite Hue
     final double oppositeHue = (hsv.hue + 180.0) % 360.0;
-
-    // Contrast balance: Ribbon dark hai toh text bright, ribbon light hai toh text dark
     final double textValue = hsv.value > 0.65 ? 0.15 : 0.95;
     final double textSaturation = hsv.saturation < 0.25 ? 0.85 : hsv.saturation;
-
     return HSVColor.fromAHSV(1.0, oppositeHue, textSaturation, textValue).toColor();
   }
 }
@@ -29,7 +23,6 @@ class ColorWheelDialog extends StatefulWidget {
     this.onColorChanged,
   });
 
-  /// Static helper method jo reader_screen.dart call karti hai
   static Future<Color?> show(
     BuildContext context, {
     required Color initialColor,
@@ -79,75 +72,84 @@ class _ColorWheelDialogState extends State<ColorWheelDialog> {
   @override
   Widget build(BuildContext context) {
     final oppositeColor = ColorWheelMath.getOppositeWheelColor(_selectedColor);
+    const double wheelSize = 280.0;
 
     return AlertDialog(
       backgroundColor: const Color(0xFF1E293B),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       title: Text(
         widget.title,
-        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+        textAlign: TextAlign.center,
+        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
       ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // 360 Degree Touch Wheel
-          GestureDetector(
-            onPanDown: (d) => _updateColor(d.localPosition, const Size(200, 200)),
-            onPanUpdate: (d) => _updateColor(d.localPosition, const Size(200, 200)),
-            child: SizedBox(
-              width: 200,
-              height: 200,
-              child: CustomPaint(
-                painter: _WheelPainter(selectedHue: _currentHue),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 10),
+            // Expanded 280px Touch Wheel
+            GestureDetector(
+              onPanDown: (d) => _updateColor(d.localPosition, const Size(wheelSize, wheelSize)),
+              onPanUpdate: (d) => _updateColor(d.localPosition, const Size(wheelSize, wheelSize)),
+              child: SizedBox(
+                width: wheelSize,
+                height: wheelSize,
+                child: CustomPaint(
+                  painter: _WheelPainter(selectedHue: _currentHue),
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 18),
+            const SizedBox(height: 22),
 
-          // Live Ribbon + Opposite Text Preview
-          Container(
-            height: 48,
-            width: double.infinity,
-            decoration: BoxDecoration(
-              color: _selectedColor,
-              borderRadius: BorderRadius.circular(8),
-              boxShadow: [
-                BoxShadow(
-                  color: _selectedColor.withAlpha(90),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            alignment: Alignment.center,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.bookmark, color: oppositeColor, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  "180° OPPOSITE COLOR TEXT",
-                  style: TextStyle(
-                    color: oppositeColor,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0.8,
-                    fontSize: 11,
+            // Live Preview Strip with 180° opposite contrast text
+            Container(
+              height: 52,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: _selectedColor,
+                borderRadius: BorderRadius.circular(10),
+                boxShadow: [
+                  BoxShadow(
+                    color: _selectedColor.withAlpha(110),
+                    blurRadius: 12,
+                    offset: const Offset(0, 5),
                   ),
-                ),
-              ],
+                ],
+              ),
+              alignment: Alignment.center,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.bookmark, color: oppositeColor, size: 22),
+                  const SizedBox(width: 8),
+                  Text(
+                    "180° OPPOSITE COLOR TEXT",
+                    style: TextStyle(
+                      color: oppositeColor,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.0,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, null),
-          child: const Text("Cancel", style: TextStyle(color: Colors.white60)),
+          child: const Text("Cancel", style: TextStyle(color: Colors.white60, fontSize: 15)),
         ),
         ElevatedButton(
-          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF38BDF8)),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF38BDF8),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          ),
           onPressed: () => Navigator.pop(context, _selectedColor),
-          child: const Text("Apply Color", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+          child: const Text("Apply Color", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 15)),
         ),
       ],
     );
@@ -162,6 +164,7 @@ class _WheelPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = size.width / 2;
+    const double strokeWidth = 34.0;
 
     final sweepGradient = SweepGradient(
       colors: List.generate(
@@ -173,22 +176,22 @@ class _WheelPainter extends CustomPainter {
     final trackPaint = Paint()
       ..shader = sweepGradient.createShader(Rect.fromCircle(center: center, radius: radius))
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 26;
+      ..strokeWidth = strokeWidth;
 
-    canvas.drawCircle(center, radius - 15, trackPaint);
+    canvas.drawCircle(center, radius - 20, trackPaint);
 
     final rad = selectedHue * math.pi / 180;
-    final handleDistance = radius - 15;
+    final handleDistance = radius - 20;
     final handleCenter = Offset(
       center.dx + handleDistance * math.cos(rad),
       center.dy + handleDistance * math.sin(rad),
     );
 
-    final handleBorder = Paint()..color = Colors.white..style = PaintingStyle.stroke..strokeWidth = 3;
+    final handleBorder = Paint()..color = Colors.white..style = PaintingStyle.stroke..strokeWidth = 3.5;
     final handleFill = Paint()..color = HSVColor.fromAHSV(1.0, selectedHue, 0.88, 0.88).toColor();
 
-    canvas.drawCircle(handleCenter, 11, handleFill);
-    canvas.drawCircle(handleCenter, 11, handleBorder);
+    canvas.drawCircle(handleCenter, 14, handleFill);
+    canvas.drawCircle(handleCenter, 14, handleBorder);
   }
 
   @override
