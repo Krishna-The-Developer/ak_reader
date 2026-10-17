@@ -1,135 +1,93 @@
-# AK Reader
+# 📖 AK Reader (v1.0.2)
 
-A tactile wooden desk PDF reader built with Flutter.
+A physics-accurate, skeuomorphic e-reader built with Flutter. Engineered with isometric developable surface curl physics, real-time contact-bound sound synthesis, and an authentic wooden desk reading environment.
 
-## Features
-- Realistic Wooden Desk Frame with authentic tap audio.
-- Dynamic 3D Page Curl with angle tilt and dynamic touch physics.
-- Physical Satin Ribbon Bookmark with complementary opposite-color notes.
-- Real first-page thumbnail cover previews on bookshelf.
-- Selective book pop-scale effect (1.05x) and dedicated delete controls.
-- Full stationery suite (Pen, Pencil, Highlighter, Eraser) with 1:1 precision.
+---
 
+## 📦 Direct Downloads (v1.0.2 Installable APKs)
 
-## 🔄 Automated CI/CD Architecture
+Pre-built, release-signed APK binaries for Android:
 
-```mermaid
-graph TD
-    A[🚀 Git Push / Tag v1.0.1] --> B[🛡️ Stage 1: Security & Quality Gate]
-    
-    subgraph S1 [Audit & Analysis]
-        B --> B1[Flutter Analyze: 0 Issues]
-        B --> B2[Unit Tests: Progressive Loading]
-        B --> B3[Semgrep SAST: 0 Vulnerabilities]
-    end
-    
-    B1 & B2 & B3 --> C[📦 Stage 2: Android Multi-Target Build]
-    
-    subgraph S2 [Build & Artifacts]
-        C --> C1[Compile Native APK arm64]
-        C --> C2[Compile Play Store Bundle .aab]
-        C1 & C2 --> C3[Publish GitHub Release Assets]
-    end
-    
-    C3 --> D[📊 Stage 3: Summary Dashboard]
-    D --> E[✅ Release Delivered]
+*pwdb_flav
+ | Target Architecture | Binary File | Direct Download |
+#---|---|---|---|
+| Universal Release * | All ABIs (`arm64-v8a`, `armeabi-v7a`, `x86_64`) | `ak_reader-v1.0.2-universal.apk` | [Download Universal APK](https://github.com/Krishna-The-Developer/ak_reader/releases/download/v1.0.2/ak_reader-v1.0.2-universal.apk)
+| ARM64 Optimized * | Pure 64-bit (`arm64-v8a` - Nothing Phone 2a, etc.) | `ak_reader-v1.0.2-arm64.apk` | [Download ARM64 APK](https://github.com/Krishna-The-Developer/ak_reader/releases/download/v1.0.2/ak_reader-v1.0.2-arm64.apk)
 
-    style A fill:#1e293b,stroke:#38bdf8,stroke-width:2px,color:#fff
-    style B fill:#0f172a,stroke:#22c55e,stroke-width:2px,color:#fff
-    style C fill:#0f172a,stroke:#3b82f6,stroke-width:2px,color:#fff
-    style D fill:#0f172a,stroke:#a855f7,stroke-width:2px,color:#fff
-    style E fill:#14532d,stroke:#22c55e,stroke-width:2px,color:#fff
+---
+
+## 🏗 System Architecture Diagram
+
+```text
++-------------------------------------------------------------------------------------+
+-|                             WoodenDeskFrame                                          |
+-|  - Real Oak Surface Canvas (wood_table_texture.jpg)                                   |
+|  - Boundary-Aware Pointer Dispatcher:                                               |
+|      * Desk Hit -> Trigger Wood Impact Knock (Modal Synthesis)                       |
+|      * Book Hit -> Forward to Gesture Surface                                      |
+|  - Radial Stationery Petal System (1 Top, 3 Left, 3 Right)                            |
++---------------------------------------+-----------------------------------------------+
+                                          |
+                                          v
++---------------------------------------+----------------------------------------------+
+|                             HardcoverView                                           |
+|  - Skeuomorphic Leather Casing with Vintage Brass Corner Reinforcements               |
+|  - Spine Hinge Rotation Matrix: R_y(phi_cover)                                       |
+|  - Central Ribbon Root Anchor Point (Top Headband)                                    |
++---------------------------------------+-----------------------------------------------+
+                                          |
+                                          v
++---------------------------------------+----------------------------------------------+
+|                            RealisticPageCurl                                        |
+|  - Isometric Developable Surface Generator                                           |
+|  - Variable Euler / Clothoid Curvature Profile: kappa(s, t)                           |
+|  - Directional Inversion Matrix: M_x = diag(-1, 1, 1) for Left-to-Right flips          |
+|  - Dynamic Landing Incline Offset: epsilon = arcsin(h_stack / W)                     |
++---------------------++---------------------------------+--+----------------------------+
+                      |                                   |
+                      v                                   v
++---------------------+--------------------+  +------------+--------------------------+
+|          RibbonBookmarkWidget             |  |               SoundService                 |
+|  - Surface Following: B(sigma, t)        |  |  - Strict Contact-Duration Audio Loop      |
+|  - Catenary Hanging Tail:                 |  |  - Gain Modulated by Angular Velocity      |
+|      y(x) = h * (1 - cos(2*pi*x / L))     |  |      A_rustle(t) proportional to |dTheta|  |
+|  - Zero Text Occlusion Geometry            |  |  - Contact Release -> 0ms Silence Cut      |
+|  - Slide-Out Parchment Note Card          |  |  - Impact Burst Events: Knock & Landing    |
++----------------------------------------------+-  +----------------------------------------------+
 ```
 
+---
 
-## 🔄 Automated CI/CD Architecture
+## 🔄 Interaction & Physics Workflow
 
-```mermaid
-graph TD
-    A[🚀 Git Push / Tag v1.0.1] --> B[🛡️ Stage 1: Security & Quality Gate]
-    
-    subgraph S1 [Audit & Analysis]
-        B --> B1[Flutter Analyze: 0 Issues]
-        B --> B2[Unit Tests: Progressive Loading]
-        B --> B3[Semgrep SAST: 0 Vulnerabilities]
-    end
-    
-    B1 & B2 & B3 --> C[📦 Stage 2: Android Multi-Target Build]
-    
-    subgraph S2 [Build & Artifacts]
-        C --> C1[Compile Native APK arm64]
-        C --> C2[Compile Play Store Bundle .aab]
-        C1 & C2 --> C3[Publish GitHub Release Assets]
-    end
-    
-    C3 --> D[📊 Stage 3: Summary Dashboard]
-    D --> E[✅ Release Delivered]
-
-    style A fill:#1e293b,stroke:#38bdf8,stroke-width:2px,color:#fff
-    style B fill:#0f172a,stroke:#22c55e,stroke-width:2px,color:#fff
-    style C fill:#0f172a,stroke:#3b82f6,stroke-width:2px,color:#fff
-    style D fill:#0f172a,stroke:#a855f7,stroke-width:2px,color:#fff
-    style E fill:#14532d,stroke:#22c55e,stroke-width:2px,color:#fff
+```text
+[User Pointer Down on Page Margin]
+       |
+       +---> Start Low-Latency Rustle Audio Loop (Gain = 0.0)
+       |
+[Pointer Drag (Pan Update)]
+       |
+       +---> Calculate Angular Velocity: theta_dot = dTheta / dt
+       +---> Live Modulate Audio: Gain = 0.25 * (|theta_dot| / peak)
+       +---> Compute Surface Curl:
+       |        kappa(s, t) = sigma * (2*Theta(t)/L) * (1 - s/L)
+       |        theta(s, t) = sigma * Theta(t) * [1 - (1 - s/L)^2]
+       |
+[Pointer Lift (Pan End / Cancel)]
+       |
+       +---> IMMEDIATE 0ms Audio Cut-off (Rustle terminates instantly)
+       |
+       +---> Check Threshold: Drag > 26% width OR Flick Velocity > 400 px/s
+             |
+             +---> [YES]: Smooth Ease-to-Stack (theta -> pi)
+             |            Page hits destination stack -> Trigger One-Shot Landing Thump
+             |
+             +---> [NO] : Elastic Plate Rebound to Origin (theta -> 0)
 ```
 
+---
 
-## 🔄 Automated CI/CD Architecture
+## 🖐 Mathematical Formulation
 
-```mermaid
-graph TD
-    A[🚀 Git Push / Tag v1.0.1] --> B[🛡️ Stage 1: Security & Quality Gate]
-    
-    subgraph S1 [Audit & Analysis]
-        B --> B1[Flutter Analyze: 0 Issues]
-        B --> B2[Unit Tests: Progressive Loading]
-        B --> B3[Semgrep SAST: 0 Vulnerabilities]
-    end
-    
-    B1 & B2 & B3 --> C[📦 Stage 2: Android Multi-Target Build]
-    
-    subgraph S2 [Build & Artifacts]
-        C --> C1[Compile Native APK arm64]
-        C --> C2[Compile Play Store Bundle .aab]
-        C1 & C2 --> C3[Publish GitHub Release Assets]
-    end
-    
-    C3 --> D[📊 Stage 3: Summary Dashboard]
-    D --> E[✅ Release Delivered]
-
-    style A fill:#1e293b,stroke:#38bdf8,stroke-width:2px,color:#fff
-    style B fill:#0f172a,stroke:#22c55e,stroke-width:2px,color:#fff
-    style C fill:#0f172a,stroke:#3b82f6,stroke-width:2px,color:#fff
-    style D fill:#0f172a,stroke:#a855f7,stroke-width:2px,color:#fff
-    style E fill:#14532d,stroke:#22c55e,stroke-width:2px,color:#fff
-```
-
-
-## 🔄 Automated CI/CD Architecture
-
-```mermaid
-graph TD
-    A[🚀 Git Push / Tag v1.0.1] --> B[🛡️ Stage 1: Security & Quality Gate]
-    
-    subgraph S1 [Audit & Analysis]
-        B --> B1[Flutter Analyze: 0 Issues]
-        B --> B2[Unit Tests: Progressive Loading]
-        B --> B3[Semgrep SAST: 0 Vulnerabilities]
-    end
-    
-    B1 & B2 & B3 --> C[📦 Stage 2: Android Multi-Target Build]
-    
-    subgraph S2 [Build & Artifacts]
-        C --> C1[Compile Native APK arm64]
-        C --> C2[Compile Play Store Bundle .aab]
-        C1 & C2 --> C3[Publish GitHub Release Assets]
-    end
-    
-    C3 --> D[📊 Stage 3: Summary Dashboard]
-    D --> E[✅ Release Delivered]
-
-    style A fill:#1e293b,stroke:#38bdf8,stroke-width:2px,color:#fff
-    style B fill:#0f172a,stroke:#22c55e,stroke-width:2px,color:#fff
-    style C fill:#0f172a,stroke:#3b82f6,stroke-width:2px,color:#fff
-    style D fill:#0f172a,stroke:#a855f7,stroke-width:2px,color:#fff
-    style E fill:#14532d,stroke:#22c55e,stroke-width:2px,color:#fff
-```
+Can be found in developer documentation.
+This ensures an isometric developable surface without metric distortion across all fames.
