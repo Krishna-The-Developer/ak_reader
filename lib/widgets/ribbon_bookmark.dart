@@ -227,7 +227,7 @@ class _StableDevelopableRibbonPainter extends CustomPainter {
       ..color = oppositeColor.withAlpha(180)
       ..strokeWidth = 0.8
       ..style = PaintingStyle.stroke;
-    canvas.drawLine(Offset(1.0, 0), Offset(1.0 + theta, h - notch), stitch);
+    canvas.drawLine(const Offset(1.0, 0), Offset(1.0 + theta, h - notch), stitch);
     canvas.drawLine(Offset(w - 1.0, 0), Offset(w - 1.0 + theta, h - notch), stitch);
   }
 

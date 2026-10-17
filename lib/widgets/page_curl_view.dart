@@ -163,13 +163,10 @@ class _RealisticPageCurlState extends State<RealisticPageCurl>
     _animController.reset();
     final Animation<double> anim = Tween<double>(begin: startVal, end: endVal).animate(smoothAnim);
 
-    double lastVal = startVal;
     anim.addListener(() {
       final double currentVal = anim.value;
       // Angular velocity |dTheta/dt|
-      final double thetaDot = (currentVal - lastVal).abs() * 3.5;
       
-      lastVal = currentVal;
 
       setState(() {
         final double dist = anim.value * totalW;
@@ -287,7 +284,6 @@ class _DirectionalDevelopableCurlPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final double totalW = size.width;
-    final double totalH = size.height;
 
     final double displacement = (dragCurrent.dx - dragOrigin.dx);
     final double effectiveDist = (sigma == 1) ? -displacement : displacement;
